@@ -11,7 +11,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git nginx
+apt-get install -y ca-certificates curl git
 
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
@@ -39,31 +39,9 @@ fi
 cd "$APP_DIR"
 docker compose up -d --build
 
-cat > /etc/nginx/sites-available/linkponto <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $DOMAIN;
-    client_max_body_size 3M;
-
-    location / {
-        proxy_pass http://127.0.0.1:3010;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
-ln -sfn /etc/nginx/sites-available/linkponto /etc/nginx/sites-enabled/linkponto
-nginx -t
-systemctl enable --now nginx
-systemctl reload nginx
-
 echo
 echo "LINKPONTO_INSTALADO"
-echo "Painel: http://$DOMAIN"
-echo "Ponto:  http://$DOMAIN/ponto"
+echo "Painel: https://$DOMAIN"
+echo "Ponto:  https://$DOMAIN/ponto"
 echo "Login inicial: admin / admin@123"
 echo "Container: $(docker inspect -f '{{.State.Status}}' linkponto 2>/dev/null || echo indisponivel)"

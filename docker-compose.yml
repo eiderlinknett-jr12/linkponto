@@ -13,6 +13,13 @@ services:
       - "127.0.0.1:3010:3000"
     volumes:
       - linkponto_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.linkponto.entrypoints=websecure"
+      - "traefik.http.routers.linkponto.rule=Host(`linkponto.linknett.com.br`)"
+      - "traefik.http.routers.linkponto.tls=true"
+      - "traefik.http.routers.linkponto.tls.certresolver=letsencrypt"
+      - "traefik.http.services.linkponto.loadbalancer.server.port=3000"
 
 volumes:
   linkponto_data:
