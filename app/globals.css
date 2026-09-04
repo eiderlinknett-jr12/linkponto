@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "../vendor/shadcn-tailwind-4.13.0.css";
 
 :root {
   --background: #f4f7f6; --foreground: #14231d; --card: #ffffff;
