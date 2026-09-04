@@ -1,8 +1,10 @@
-import { env } from "cloudflare:workers";
+import { serverEnv as env } from "@/lib/server-env";
+import { requireAdminApi } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied=await requireAdminApi(); if(denied)return denied;
   try {
     const employees = await env.DB.prepare(
       `SELECT id,name,cpf,code,role,department,workdays,start_time AS startTime,

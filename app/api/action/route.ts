@@ -1,4 +1,5 @@
-import { env } from "cloudflare:workers";
+import { serverEnv as env } from "@/lib/server-env";
+import { requireAdminApi } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as Record<string, any>;
     const now = new Date().toISOString();
+    if(body.action!=="punch") { const denied=await requireAdminApi(); if(denied)return denied; }
     if (body.action === "create_employee") {
       const required = ["name", "cpf", "role", "pin"];
       if (required.some(k => !String(body[k] ?? "").trim())) return Response.json({ error: "Preencha os campos obrigatórios." }, { status: 400 });

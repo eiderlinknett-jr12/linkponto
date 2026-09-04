@@ -1,0 +1,9 @@
+"use client";
+import { FormEvent, useState } from "react";
+import { Clock3, LockKeyhole } from "lucide-react";
+
+export default function LoginPage() {
+  const [error,setError]=useState(""),[busy,setBusy]=useState(false);
+  async function login(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");const form=new FormData(e.currentTarget);const r=await fetch("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({user:form.get("user"),password:form.get("password")})});const j=await r.json();if(!r.ok){setError(j.error);setBusy(false);return}window.location.href="/"}
+  return <main className="grid min-h-screen place-items-center bg-[#09271d] p-5"><section className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl"><div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#18bb82] text-white"><Clock3 size={30}/></div><h1 className="mt-5 text-center text-3xl font-extrabold">Link<span className="text-[#0d9b6d]">Ponto</span></h1><p className="mt-1 text-center text-sm text-slate-500">Acesso administrativo</p><form onSubmit={login} className="mt-7 space-y-4"><label className="block text-sm font-bold">Usuário<input name="user" required autoFocus className="mt-2 h-12 w-full rounded-xl border px-3"/></label><label className="block text-sm font-bold">Senha<input name="password" type="password" required className="mt-2 h-12 w-full rounded-xl border px-3"/></label>{error&&<p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}<button disabled={busy} className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#087f5b] font-bold text-white"><LockKeyhole size={18}/>{busy?"Entrando...":"Entrar"}</button></form><a href="/ponto" className="mt-5 block text-center text-sm font-bold text-[#087f5b]">Ir para o relógio de ponto</a></section></main>
+}

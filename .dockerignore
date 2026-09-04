@@ -1,0 +1,6 @@
+node_modules
+.next
+.git
+.sites-runtime
+data
+npm-debug.log

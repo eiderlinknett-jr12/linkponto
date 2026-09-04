@@ -1,0 +1,19 @@
+services:
+  linkponto:
+    build: .
+    container_name: linkponto
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /app/data
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin@123}
+      AUTH_SECRET: ${AUTH_SECRET}
+    ports:
+      - "127.0.0.1:3010:3000"
+    volumes:
+      - linkponto_data:/app/data
+
+volumes:
+  linkponto_data:
+    name: linkponto_data
