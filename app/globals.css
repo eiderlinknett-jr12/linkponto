@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+:root {
+  --background: #f4f7f6; --foreground: #14231d; --card: #ffffff;
+  --card-foreground: #14231d; --primary: #087f5b; --primary-foreground: #ffffff;
+  --secondary: #e9f4ef; --secondary-foreground: #075b43; --muted: #edf1ef;
+  --muted-foreground: #607169; --accent: #dff5eb; --accent-foreground: #075b43;
+  --destructive: #c93636; --border: #dbe5e0; --input: #ccd9d3; --ring: #10a777;
+  --radius: 0.9rem;
+}
+@theme inline {
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive); --color-border: var(--border);
+  --color-input: var(--input); --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 5px);
+  --font-sans: "Inter", "Segoe UI", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+.input { margin-top:.5rem; height:3.5rem; width:100%; border-radius:.75rem; border:1px solid #cbd5e1; padding:0 1rem; outline:none; }
+.input:focus { border-color:#10a777; box-shadow:0 0 0 4px #d1fae5; }
+@keyframes pop { 0% { transform: scale(.96); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
+.animate-pop { animation: pop .2s ease-out; }
+@media print {
+  body * { visibility:hidden; }
+  #report, #report * { visibility:visible; }
+  #report { position:absolute; inset:0; width:100%; border:0; box-shadow:none; }
+  aside, header, nav, button, .report-filter { display:none !important; }
+}

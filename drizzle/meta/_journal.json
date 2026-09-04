@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788484217265,
+      "tag": "0000_faulty_magdalene",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788485677268,
+      "tag": "0001_wide_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788486508120,
+      "tag": "0002_married_lady_ursula",
+      "breakpoints": true
+    }
+  ]
+}
