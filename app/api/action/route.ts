@@ -20,7 +20,8 @@ function distanceMeters(aLat:number,aLon:number,bLat:number,bLon:number) {
   const a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
   return r*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-function scheduleFrom(body:Record<string,any>){const names=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"],days=names.map((name,i)=>({day:i,name,enabled:body[`day${i}Enabled`]===true||body[`day${i}Enabled`]==="on",start:body[`day${i}Start`]||"08:00",breakStart:body[`day${i}BreakStart`]||"",breakEnd:body[`day${i}BreakEnd`]||"",end:body[`day${i}End`]||"17:00"}));const minutes=days.reduce((sum,d)=>{if(!d.enabled)return sum;const m=(v:string)=>{const[h,n]=v.split(":").map(Number);return h*60+n};let total=Math.max(0,m(d.end)-m(d.start));if(d.breakStart&&d.breakEnd)total-=Math.max(0,m(d.breakEnd)-m(d.breakStart));return sum+total},0);return{days,holiday:{enabled:body.holidayEnabled===true||body.holidayEnabled==="on",start:body.holidayStart||"07:00",breakStart:body.holidayBreakStart||"",breakEnd:body.holidayBreakEnd||"",end:body.holidayEnd||"14:00"},weeklyMinutes:minutes,summary:days.filter(d=>d.enabled).map(d=>d.name).join(", ")||"Sem jornada"}}
+function scheduleFrom(body:Record<string,any>){const names=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"],days=names.map((name,i)=>({day:i,name,enabled:body[`day${i}Enabled`]===true||body[`day${i}Enabled`]==="on",hasBreak:body[`day${i}HasBreak`]===true||body[`day${i}HasBreak`]==="on",start:body[`day${i}Start`]||"08:00",breakStart:body[`day${i}BreakStart`]||"",breakEnd:body[`day${i}BreakEnd`]||"",end:body[`day${i}End`]||"17:00"}));const minutes=days.reduce((sum,d)=>{if(!d.enabled)return sum;const m=(v:string)=>{const[h,n]=v.split(":").map(Number);return h*60+n};let total=Math.max(0,m(d.end)-m(d.start));if(d.hasBreak&&d.breakStart&&d.breakEnd)total-=Math.max(0,m(d.breakEnd)-m(d.breakStart));return sum+total},0);return{days,holiday:{enabled:body.holidayEnabled===true||body.holidayEnabled==="on",hasBreak:body.holidayHasBreak===true||body.holidayHasBreak==="on",start:body.holidayStart||"07:00",breakStart:body.holidayBreakStart||"",breakEnd:body.holidayBreakEnd||"",end:body.holidayEnd||"14:00"},weeklyMinutes:minutes,summary:days.filter(d=>d.enabled).map(d=>d.name).join(", ")||"Sem jornada"}}
+function nationalHoliday(date:string){return["01-01","04-21","05-01","09-07","10-12","11-02","11-15","11-20","12-25"].includes(date.slice(5))}
 
 export async function POST(request: Request) {
   try {
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
       return Response.json({ok:true,message:"Cadastro e jornada atualizados."});
     }
     if (body.action === "punch") {
-      const employee = await env.DB.prepare("SELECT id,name,pin_hash AS pinHash,status FROM employees WHERE code=?").bind(String(body.code || "").trim()).first<any>();
+      const employee = await env.DB.prepare("SELECT id,name,pin_hash AS pinHash,status,schedule_json AS scheduleJson FROM employees WHERE code=?").bind(String(body.code || "").trim()).first<any>();
       if (!employee || employee.pinHash !== await hashPin(String(body.pin || ""))) return Response.json({ error: "Matrícula ou PIN inválido." }, { status: 401 });
       if (employee.status !== "active") return Response.json({ error: "Funcionário inativo. Procure o responsável." }, { status: 403 });
       const place=await env.DB.prepare("SELECT latitude,longitude,allowed_radius_meters AS radius,require_location AS required FROM company_settings WHERE id=1").first<any>();
@@ -75,7 +76,8 @@ export async function POST(request: Request) {
       }
       const day = localDate();
       const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM punches WHERE employee_id=? AND local_date=?").bind(employee.id, day).first<{n:number}>();
-      const kinds = ["Entrada", "Início do intervalo", "Retorno do intervalo", "Saída"];
+      let hasBreak=true;try{if(employee.scheduleJson){const schedule=JSON.parse(employee.scheduleJson),today=nationalHoliday(day)&&schedule.holiday?.enabled?schedule.holiday:schedule.days?.[new Date(`${day}T12:00:00`).getDay()];hasBreak=today?.hasBreak??Boolean(today?.breakStart&&today?.breakEnd)}}catch{}
+      const kinds = hasBreak?["Entrada", "Início do intervalo", "Retorno do intervalo", "Saída"]:["Entrada","Saída"];
       const kind = kinds[(count?.n ?? 0) % 4];
       await env.DB.prepare(
         "INSERT INTO punches (employee_id,kind,occurred_at,local_date,source,latitude,longitude,device,created_at) VALUES (?,?,?,?,?,?,?,?,?)"
