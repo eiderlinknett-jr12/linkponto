@@ -10,6 +10,7 @@ import {
   Fingerprint,
   ImageUp,
   LayoutDashboard,
+  LogOut,
   Menu,
   Plus,
   Printer,
@@ -277,6 +278,10 @@ export default function Home() {
     await load();
     return j;
   }
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
   const todayPunches = data.punches.filter((p) => p.localDate === today),
     activeEmployees = data.employees.filter((e) => e.status === "active"),
     present = new Set(todayPunches.map((p) => p.employeeId)).size,
@@ -335,16 +340,31 @@ export default function Home() {
             </button>
           ))}
         </nav>
-        <div className="absolute bottom-0 w-full p-4">
+        <div className="absolute bottom-0 w-full space-y-2 p-4">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="flex items-center gap-3">
               <ShieldCheck size={20} />
-              <div>
-                <p className="text-sm font-semibold">Ambiente protegido</p>
-                <p className="text-xs text-white/45">Registros auditáveis</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">
+                  {data.currentUser?.name || "Usuário"}
+                </p>
+                <p className="text-xs text-white/45">
+                  {data.currentUser?.role === "admin"
+                    ? "Administrador"
+                    : data.currentUser?.role === "manager"
+                      ? "Gestor / RH"
+                      : "Funcionário"}
+                </p>
               </div>
             </div>
           </div>
+          <button
+            onClick={logout}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-white/70 hover:bg-white/10 hover:text-white"
+          >
+            <LogOut size={17} />
+            Sair do sistema
+          </button>
         </div>
       </aside>
       {menu && (
