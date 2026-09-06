@@ -1,5 +1,6 @@
 import { serverEnv as env } from "@/lib/server-env";
-import { requireAdminApi } from "@/lib/auth";
+import { getSessionUser, requireRoleApi } from "@/lib/auth";
+import { hashPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
@@ -19,24 +20,32 @@ function distanceMeters(aLat:number,aLon:number,bLat:number,bLon:number) {
   const a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
   return r*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
+function scheduleFrom(body:Record<string,any>){const names=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"],days=names.map((name,i)=>({day:i,name,enabled:body[`day${i}Enabled`]===true||body[`day${i}Enabled`]==="on",start:body[`day${i}Start`]||"08:00",breakStart:body[`day${i}BreakStart`]||"",breakEnd:body[`day${i}BreakEnd`]||"",end:body[`day${i}End`]||"17:00"}));const minutes=days.reduce((sum,d)=>{if(!d.enabled)return sum;const m=(v:string)=>{const[h,n]=v.split(":").map(Number);return h*60+n};let total=Math.max(0,m(d.end)-m(d.start));if(d.breakStart&&d.breakEnd)total-=Math.max(0,m(d.breakEnd)-m(d.breakStart));return sum+total},0);return{days,holiday:{enabled:body.holidayEnabled===true||body.holidayEnabled==="on",start:body.holidayStart||"07:00",breakStart:body.holidayBreakStart||"",breakEnd:body.holidayBreakEnd||"",end:body.holidayEnd||"14:00"},weeklyMinutes:minutes,summary:days.filter(d=>d.enabled).map(d=>d.name).join(", ")||"Sem jornada"}}
 
 export async function POST(request: Request) {
   try {
     const body = await request.json() as Record<string, any>;
     const now = new Date().toISOString();
-    if(body.action!=="punch") { const denied=await requireAdminApi(); if(denied)return denied; }
+    if(body.action!=="punch") { const denied=await requireRoleApi(["admin","manager"]); if(denied)return denied; }
+    if(["save_company","create_user","update_user","toggle_user"].includes(body.action)){const denied=await requireRoleApi(["admin"]);if(denied)return denied}
+    if(body.action==="create_user"){
+      if(!body.name?.trim()||!body.username?.trim()||!body.password)return Response.json({error:"Preencha nome, usuário e senha."},{status:400});
+      if(String(body.password).length<6)return Response.json({error:"A senha deve ter pelo menos 6 caracteres."},{status:400});
+      if(!["admin","manager","employee"].includes(body.role))return Response.json({error:"Nível de acesso inválido."},{status:400});
+      await env.DB.prepare("INSERT INTO users (name,username,password_hash,role,employee_id,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)").bind(body.name.trim(),body.username.trim(),hashPassword(String(body.password)),body.role,body.employeeId?Number(body.employeeId):null,now,now).run();return Response.json({ok:true,message:"Usuário cadastrado com sucesso."});
+    }
+    if(body.action==="update_user"){
+      if(!body.id||!body.name?.trim()||!body.username?.trim())return Response.json({error:"Preencha os campos obrigatórios."},{status:400});const params:any[]=[body.name.trim(),body.username.trim(),body.role,body.employeeId?Number(body.employeeId):null,now];let sql="UPDATE users SET name=?,username=?,role=?,employee_id=?,updated_at=?";if(body.password){if(String(body.password).length<6)return Response.json({error:"A senha deve ter pelo menos 6 caracteres."},{status:400});sql+=",password_hash=?";params.push(hashPassword(String(body.password)))}sql+=" WHERE id=?";params.push(Number(body.id));await env.DB.prepare(sql).bind(...params).run();return Response.json({ok:true,message:"Usuário atualizado com sucesso."});
+    }
+    if(body.action==="toggle_user"){const current=await getSessionUser();if(Number(body.id)===current?.id)return Response.json({error:"Você não pode inativar seu próprio usuário."},{status:400});await env.DB.prepare("UPDATE users SET status=CASE WHEN status='active' THEN 'inactive' ELSE 'active' END,updated_at=? WHERE id=?").bind(now,Number(body.id)).run();return Response.json({ok:true,message:"Situação do usuário atualizada."});}
     if (body.action === "create_employee") {
       const required = ["name", "cpf", "role", "pin"];
       if (required.some(k => !String(body[k] ?? "").trim())) return Response.json({ error: "Preencha os campos obrigatórios." }, { status: 400 });
       if (!/^\d{4,6}$/.test(body.pin)) return Response.json({ error: "O PIN deve ter de 4 a 6 números." }, { status: 400 });
       const next = await env.DB.prepare("SELECT COALESCE(MAX(id),0)+1 AS n FROM employees").first<{n:number}>();
       const code = String(next?.n ?? 1).padStart(4, "0");
-      await env.DB.prepare(
-        `INSERT INTO employees (name,cpf,code,pin_hash,role,department,workdays,start_time,break_start,break_end,end_time,weekly_minutes,status,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-      ).bind(body.name.trim(), body.cpf.trim(), code, await hashPin(body.pin), body.role.trim(), body.department?.trim() || "Geral",
-        body.workdays || "Seg a Sex", body.startTime || "08:00", body.breakStart || "12:00", body.breakEnd || "13:00",
-        body.endTime || "17:00", (Number(body.weeklyHours || 44)*60)+Number(body.weeklyExtraMinutes || 0), "active", now).run();
+      const schedule=scheduleFrom(body),base=schedule.days.find(d=>d.enabled)||schedule.days[1];
+      await env.DB.prepare(`INSERT INTO employees (name,cpf,code,pin_hash,role,department,workdays,start_time,break_start,break_end,end_time,weekly_minutes,schedule_json,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(body.name.trim(),body.cpf.trim(),code,await hashPin(body.pin),body.role.trim(),body.department?.trim()||"Geral",schedule.summary,base.start,base.breakStart,base.breakEnd,base.end,schedule.weeklyMinutes,JSON.stringify(schedule),"active",now).run();
       return Response.json({ ok: true, message: `Funcionário cadastrado. Matrícula ${code}.` });
     }
     if (body.action === "toggle_employee") {
@@ -44,10 +53,10 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, message: "Situação atualizada." });
     }
     if (body.action === "update_employee") {
-      const weekly=(Number(body.weeklyHours||0)*60)+Number(body.weeklyExtraMinutes||0);
+      const schedule=scheduleFrom(body),weekly=schedule.weeklyMinutes,base=schedule.days.find(d=>d.enabled)||schedule.days[1];
       if(!body.id||!body.name?.trim()||!body.role?.trim()||weekly<=0)return Response.json({error:"Preencha os campos obrigatórios."},{status:400});
-      const params:any[]=[body.name.trim(),body.cpf.trim(),body.role.trim(),body.department?.trim()||"Geral",body.workdays||"Seg a Sex",body.startTime,body.breakStart,body.breakEnd,body.endTime,weekly];
-      let sql=`UPDATE employees SET name=?,cpf=?,role=?,department=?,workdays=?,start_time=?,break_start=?,break_end=?,end_time=?,weekly_minutes=?`;
+      const params:any[]=[body.name.trim(),body.cpf.trim(),body.role.trim(),body.department?.trim()||"Geral",schedule.summary,base.start,base.breakStart,base.breakEnd,base.end,weekly,JSON.stringify(schedule)];
+      let sql=`UPDATE employees SET name=?,cpf=?,role=?,department=?,workdays=?,start_time=?,break_start=?,break_end=?,end_time=?,weekly_minutes=?,schedule_json=?`;
       if(body.pin){if(!/^\d{4,6}$/.test(body.pin))return Response.json({error:"O PIN deve ter de 4 a 6 números."},{status:400});sql+=",pin_hash=?";params.push(await hashPin(body.pin))}
       sql+=" WHERE id=?";params.push(Number(body.id));await env.DB.prepare(sql).bind(...params).run();
       return Response.json({ok:true,message:"Cadastro e jornada atualizados."});

@@ -1,5 +1,5 @@
 import { serverEnv as env } from "@/lib/server-env";
-import { requireAdminApi } from "@/lib/auth";
+import { requireRoleApi } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(request:Request) {
-  const denied=await requireAdminApi(); if(denied)return denied;
+  const denied=await requireRoleApi(["admin"]); if(denied)return denied;
   try{
     const form=await request.formData(),file=form.get("logo");
     if(!(file instanceof File))return Response.json({error:"Selecione uma imagem."},{status:400});

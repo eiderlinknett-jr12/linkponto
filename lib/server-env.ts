@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { hashPassword } from "./password";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const uploadsDir = path.join(dataDir, "uploads");
@@ -37,7 +38,15 @@ CREATE TABLE IF NOT EXISTS company_settings (
  latitude TEXT, longitude TEXT, allowed_radius_meters INTEGER NOT NULL DEFAULT 150,
  require_location INTEGER NOT NULL DEFAULT 1, logo_key TEXT, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS users (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, username TEXT NOT NULL UNIQUE,
+ password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'employee', employee_id INTEGER REFERENCES employees(id),
+ status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 `);
+const employeeColumns=sqlite.prepare("PRAGMA table_info(employees)").all() as Array<{name:string}>;
+if(!employeeColumns.some(c=>c.name==="schedule_json"))sqlite.exec("ALTER TABLE employees ADD COLUMN schedule_json TEXT");
+const now=new Date().toISOString();sqlite.prepare("INSERT OR IGNORE INTO users (name,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").run("Administrador","admin",hashPassword(process.env.ADMIN_PASSWORD||"admin@123"),"admin","active",now,now);
 
 class Statement {
   private params: unknown[] = [];

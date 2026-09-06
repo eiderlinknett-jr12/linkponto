@@ -1,15 +1,17 @@
 import { serverEnv as env } from "@/lib/server-env";
-import { requireAdminApi } from "@/lib/auth";
+import { getSessionUser, requireAuthenticatedApi } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const denied=await requireAdminApi(); if(denied)return denied;
+  const denied=await requireAuthenticatedApi(); if(denied)return denied;
   try {
+    const currentUser=await getSessionUser();
+    if(currentUser?.role==="employee")return Response.json({employees:[],punches:[],adjustments:[],company:null,users:[],currentUser});
     const employees = await env.DB.prepare(
       `SELECT id,name,cpf,code,role,department,workdays,start_time AS startTime,
       break_start AS breakStart,break_end AS breakEnd,end_time AS endTime,
-      weekly_minutes AS weeklyMinutes,status,created_at AS createdAt
+      weekly_minutes AS weeklyMinutes,schedule_json AS scheduleJson,status,created_at AS createdAt
       FROM employees ORDER BY name`
     ).all();
     const punches = await env.DB.prepare(
@@ -29,7 +31,8 @@ export async function GET() {
       logo_key AS logoKey,updated_at AS updatedAt
       FROM company_settings WHERE id=1`
     ).first();
-    return Response.json({ employees: employees.results, punches: punches.results, adjustments: adjustments.results, company });
+    const users=currentUser?.role==="admin"?await env.DB.prepare(`SELECT id,name,username,role,employee_id AS employeeId,status,created_at AS createdAt FROM users ORDER BY name`).all():{results:[]};
+    return Response.json({ employees: employees.results, punches: punches.results, adjustments: adjustments.results, company, users:users.results, currentUser });
   } catch (error) {
     console.error("data_error", error);
     return Response.json({ error: "Não foi possível carregar os dados." }, { status: 500 });
