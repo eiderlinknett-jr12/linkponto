@@ -35,6 +35,7 @@ type DaySchedule = {
 };
 type WorkSchedule = {
   days: DaySchedule[];
+  monthlySundayOff?: string;
   holiday: {
     enabled: boolean;
     hasBreak?: boolean;
@@ -149,7 +150,7 @@ const timeMinutes = (v: string) => {
   const [h, m] = v.split(":").map(Number);
   return h * 60 + m;
 };
-function expectedMinutes(emp: Employee, date: string) {
+function scheduleInfo(emp: Employee, date: string) {
   let schedule: WorkSchedule | null = null;
   try {
     if (emp.scheduleJson) schedule = JSON.parse(emp.scheduleJson);
@@ -157,8 +158,24 @@ function expectedMinutes(emp: Employee, date: string) {
   if (!schedule) {
     const days =
       emp.workdays.includes("Sáb") || emp.workdays.includes("6x1") ? 6 : 5;
-    return Math.round(emp.weeklyMinutes / days);
+    return {
+      expected: Math.round(emp.weeklyMinutes / days),
+      off: false,
+      label: "Jornada",
+    };
   }
+  const dt = new Date(`${date}T12:00:00`),
+    day = dt.getDay();
+  const choice = schedule.monthlySundayOff || "none";
+  const week = Math.ceil(dt.getDate() / 7);
+  const lastSunday =
+    new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate() - dt.getDate() <
+    7;
+  if (
+    day === 0 &&
+    (choice === String(week) || (choice === "last" && lastSunday))
+  )
+    return { expected: 0, off: true, label: "Folga de domingo" };
   const md = date.slice(5),
     national = [
       "01-01",
@@ -174,10 +191,15 @@ function expectedMinutes(emp: Employee, date: string) {
   const d =
     national && schedule.holiday.enabled
       ? schedule.holiday
-      : schedule.days[new Date(`${date}T12:00:00`).getDay()];
-  if (!d?.enabled) return 0;
+      : schedule.days[day];
+  if (!d?.enabled)
+    return {
+      expected: 0,
+      off: true,
+      label: national ? "Feriado" : "Folga semanal",
+    };
   const hasBreak = d.hasBreak ?? Boolean(d.breakStart && d.breakEnd);
-  return Math.max(
+  const expected = Math.max(
     0,
     timeMinutes(d.end) -
       timeMinutes(d.start) -
@@ -185,6 +207,11 @@ function expectedMinutes(emp: Employee, date: string) {
         ? Math.max(0, timeMinutes(d.breakEnd) - timeMinutes(d.breakStart))
         : 0),
   );
+  return {
+    expected,
+    off: false,
+    label: national ? "Feriado trabalhado" : "Jornada",
+  };
 }
 
 export default function Home() {
@@ -1037,28 +1064,46 @@ function Reports({
     filtered.forEach((p) =>
       (groups[`${p.employeeId}|${p.localDate}`] ??= []).push(p),
     );
-    return Object.entries(groups).map(([key, list]) => {
-      list.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
-      let minutes = 0;
-      for (let i = 0; i + 1 < list.length; i += 2)
-        minutes +=
-          (new Date(list[i + 1].occurredAt).getTime() -
-            new Date(list[i].occurredAt).getTime()) /
-          60000;
-      const emp = employees.find((e) => e.id === list[0].employeeId)!,
-        expected = expectedMinutes(emp, list[0].localDate);
-      return {
-        key,
-        name: list[0].name,
-        date: list[0].localDate,
-        marks: list.map((x) => fmtTime(x.occurredAt)).join(" · "),
-        minutes: Math.max(0, Math.round(minutes)),
-        expected,
-        balance: Math.round(minutes) - expected,
-        incomplete: list.length % 2 !== 0,
-      };
-    });
-  }, [filtered, employees]);
+    const dates: string[] = [];
+    for (
+      let d = new Date(`${start}T12:00:00`),
+        limit = new Date(`${end}T12:00:00`);
+      d <= limit;
+      d.setDate(d.getDate() + 1)
+    )
+      dates.push(d.toISOString().slice(0, 10));
+    return selected.flatMap((emp) =>
+      dates.map((date) => {
+        const key = `${emp.id}|${date}`,
+          list = groups[key] || [];
+        list.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+        let minutes = 0;
+        for (let i = 0; i + 1 < list.length; i += 2)
+          minutes +=
+            (new Date(list[i + 1].occurredAt).getTime() -
+              new Date(list[i].occurredAt).getTime()) /
+            60000;
+        const info = scheduleInfo(emp, date),
+          workedMinutes = Math.max(0, Math.round(minutes));
+        return {
+          key,
+          name: emp.name,
+          date,
+          marks: list.length
+            ? list.map((x) => fmtTime(x.occurredAt)).join(" · ")
+            : info.off
+              ? "FOLGA"
+              : "Sem registro",
+          minutes: workedMinutes,
+          expected: info.expected,
+          balance: workedMinutes - info.expected,
+          incomplete: !info.off && (list.length === 0 || list.length % 2 !== 0),
+          status: info.label,
+          off: info.off,
+        };
+      }),
+    );
+  }, [filtered, selected, start, end]);
   const worked = daily.reduce((s, d) => s + d.minutes, 0),
     expected = daily.reduce((s, d) => s + d.expected, 0),
     balance = worked - expected,
@@ -1073,6 +1118,7 @@ function Reports({
           "Funcionário",
           "Data",
           "Marcações",
+          "Situação",
           "Horas trabalhadas",
           "Carga prevista",
           "Saldo",
@@ -1081,6 +1127,7 @@ function Reports({
           d.name,
           d.date,
           d.marks,
+          d.status,
           hm(d.minutes),
           hm(d.expected),
           hm(d.balance),
@@ -1228,6 +1275,7 @@ function Reports({
                     "Funcionário",
                     "Data",
                     "Marcações",
+                    "Situação",
                     "Trabalhado",
                     "Previsto",
                     "Saldo",
@@ -1252,6 +1300,13 @@ function Reports({
                           Incompleto
                         </span>
                       )}
+                    </td>
+                    <td className="px-5 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${d.off ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}
+                      >
+                        {d.status}
+                      </span>
                     </td>
                     <td className="px-5 py-4 font-bold">{hm(d.minutes)}</td>
                     <td className="px-5 py-4">{hm(d.expected)}</td>
@@ -1603,6 +1658,7 @@ function EmployeeModal({
         end: "17:00",
       }),
     ),
+    monthlySundayOff: "none",
     holiday: {
       enabled: true,
       hasBreak: false,
@@ -1632,7 +1688,9 @@ function EmployeeModal({
   } catch {}
   const [busy, setBusy] = useState(false),
     [schedule, setSchedule] = useState(initial),
-    [holidayHasBreak, setHolidayHasBreak] = useState(Boolean(initial.holiday.hasBreak)),
+    [holidayHasBreak, setHolidayHasBreak] = useState(
+      Boolean(initial.holiday.hasBreak),
+    ),
     editing = !!employee;
   async function go(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1704,7 +1762,14 @@ function EmployeeModal({
                   {d.name}
                 </label>
                 <label className="flex items-center gap-2 text-xs font-semibold">
-                  <input type="checkbox" name={`day${i}HasBreak`} checked={Boolean(d.hasBreak)} onChange={(e)=>dayChange(i,"hasBreak",e.target.checked)} disabled={!d.enabled} className="size-4 accent-[#087f5b]"/>
+                  <input
+                    type="checkbox"
+                    name={`day${i}HasBreak`}
+                    checked={Boolean(d.hasBreak)}
+                    onChange={(e) => dayChange(i, "hasBreak", e.target.checked)}
+                    disabled={!d.enabled}
+                    className="size-4 accent-[#087f5b]"
+                  />
                   Intervalo
                 </label>
                 {(["start", "breakStart", "breakEnd", "end"] as const).map(
@@ -1716,7 +1781,11 @@ function EmployeeModal({
                         name={`day${i}${k[0].toUpperCase() + k.slice(1)}`}
                         value={d[k]}
                         onChange={(e) => dayChange(i, k, e.target.value)}
-                        disabled={!d.enabled || ((k === "breakStart" || k === "breakEnd") && !d.hasBreak)}
+                        disabled={
+                          !d.enabled ||
+                          ((k === "breakStart" || k === "breakEnd") &&
+                            !d.hasBreak)
+                        }
                         className="mt-1 h-10 w-full rounded-lg border bg-white px-2 text-sm disabled:bg-slate-100"
                       />
                     </label>
@@ -1726,6 +1795,25 @@ function EmployeeModal({
             ))}
           </div>
         </div>
+        <label className="sm:col-span-2 block text-sm font-bold">
+          Domingo de folga mensal
+          <select
+            name="monthlySundayOff"
+            defaultValue={initial.monthlySundayOff || "none"}
+            className="mt-2 h-12 w-full rounded-xl border bg-white px-3"
+          >
+            <option value="none">Sem folga dominical automática</option>
+            <option value="1">1º domingo do mês</option>
+            <option value="2">2º domingo do mês</option>
+            <option value="3">3º domingo do mês</option>
+            <option value="4">4º domingo do mês</option>
+            <option value="last">Último domingo do mês</option>
+          </select>
+          <span className="mt-1 block font-normal text-slate-500">
+            Escolha domingos diferentes para distribuir as folgas entre a
+            equipe.
+          </span>
+        </label>
         <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <label className="flex items-center gap-2 font-bold">
             <input
@@ -1737,7 +1825,13 @@ function EmployeeModal({
             Usar jornada especial em feriados nacionais
           </label>
           <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
-            <input type="checkbox" name="holidayHasBreak" checked={holidayHasBreak} onChange={(e)=>setHolidayHasBreak(e.target.checked)} className="size-4 accent-[#087f5b]"/>
+            <input
+              type="checkbox"
+              name="holidayHasBreak"
+              checked={holidayHasBreak}
+              onChange={(e) => setHolidayHasBreak(e.target.checked)}
+              className="size-4 accent-[#087f5b]"
+            />
             Feriado possui intervalo
           </label>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
