@@ -229,6 +229,11 @@ export async function POST(request: Request) {
       const current = await getSessionUser(),
         note = String(body.note || "").trim();
       await env.DB.prepare(
+        "UPDATE employees SET calculation_start_date=CASE WHEN calculation_start_date IS NULL OR calculation_start_date>? THEN ? ELSE calculation_start_date END WHERE id=?",
+      )
+        .bind(date, date, employeeId)
+        .run();
+      await env.DB.prepare(
         "DELETE FROM punches WHERE employee_id=? AND local_date=? AND source='manual'",
       )
         .bind(employeeId, date)

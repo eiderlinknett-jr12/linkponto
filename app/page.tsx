@@ -1290,17 +1290,19 @@ function Reports({
   company: Company | null;
 }) {
   const now = new Date(),
+    today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Fortaleza",
+    }).format(now),
     first = new Date(now.getFullYear(), now.getMonth(), 1)
       .toISOString()
       .slice(0, 10),
-    last = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      .toISOString()
-      .slice(0, 10);
+    last = today;
   const [employee, setEmployee] = useState("all"),
     [department, setDepartment] = useState("all"),
     [start, setStart] = useState(first),
     [end, setEnd] = useState(last),
     [mode, setMode] = useState("detailed");
+  const effectiveEnd = end < today ? end : today;
   const departments = [...new Set(employees.map((e) => e.department))];
   const selected = employees.filter(
     (e) =>
@@ -1310,7 +1312,9 @@ function Reports({
   const ids = new Set(selected.map((e) => e.id)),
     filtered = punches.filter(
       (p) =>
-        ids.has(p.employeeId) && p.localDate >= start && p.localDate <= end,
+        ids.has(p.employeeId) &&
+        p.localDate >= start &&
+        p.localDate <= effectiveEnd,
     );
   const daily = useMemo(() => {
     const groups: Record<string, Punch[]> = {};
@@ -1320,18 +1324,29 @@ function Reports({
     const dates: string[] = [];
     for (
       let d = new Date(`${start}T12:00:00`),
-        limit = new Date(`${end}T12:00:00`);
+        limit = new Date(`${effectiveEnd}T12:00:00`);
       d <= limit;
       d.setDate(d.getDate() + 1)
     )
       dates.push(d.toISOString().slice(0, 10));
     return selected.flatMap((emp) =>
       dates
-        .filter(
-          (date) =>
-            date >=
-            (emp.calculationStartDate || emp.createdAt?.slice(0, 10) || date),
-        )
+        .filter((date) => {
+          const configured =
+              emp.calculationStartDate || emp.createdAt?.slice(0, 10) || date,
+            records = [
+              ...punches
+                .filter((p) => p.employeeId === emp.id)
+                .map((p) => p.localDate),
+              ...manualDays
+                .filter((m) => m.employeeId === emp.id)
+                .map((m) => m.localDate),
+            ],
+            effective = records.length
+              ? [configured, ...records].sort()[0]
+              : configured;
+          return date >= effective;
+        })
         .map((date) => {
           const key = `${emp.id}|${date}`,
             list = groups[key] || [];
@@ -1383,16 +1398,33 @@ function Reports({
           };
         }),
     );
-  }, [filtered, selected, start, end, manualDays]);
+  }, [filtered, selected, start, effectiveEnd, manualDays, punches]);
   const worked = daily.reduce((s, d) => s + d.minutes, 0),
     expected = daily.reduce((s, d) => s + d.expected, 0),
     balance = worked - expected,
     hm = (n: number) =>
       `${n < 0 ? "-" : ""}${Math.floor(Math.abs(n) / 60)}h ${String(Math.abs(n) % 60).padStart(2, "0")}min`;
+  const employeeSummary = selected.map((emp) => {
+    const rows = daily.filter((d) => d.name === emp.name),
+      worked = rows.reduce((s, d) => s + d.minutes, 0),
+      expected = rows.reduce((s, d) => s + d.expected, 0),
+      balance = worked - expected;
+    return {
+      id: emp.id,
+      name: emp.name,
+      worked,
+      expected,
+      balance,
+      absences: rows.filter(
+        (d) =>
+          d.status === "Falta" || (d.incomplete && d.marks === "Sem registro"),
+      ).length,
+    };
+  });
   function csv() {
     const rows = [
         ["Empresa", company?.tradeName || company?.legalName || ""],
-        ["Período", `${start} a ${end}`],
+        ["Período", `${start} a ${effectiveEnd}`],
         [],
         [
           "Funcionário",
@@ -1426,7 +1458,7 @@ function Reports({
     a.href = URL.createObjectURL(
       new Blob(["\ufeff" + text], { type: "text/csv" }),
     );
-    a.download = `linkponto-${start}-${end}.csv`;
+    a.download = `linkponto-${start}-${effectiveEnd}.csv`;
     a.click();
   }
   return (
@@ -1461,6 +1493,7 @@ function Reports({
             <input
               type="date"
               value={start}
+              max={today}
               onChange={(e) => setStart(e.target.value)}
             />
           </Filter>
@@ -1468,6 +1501,7 @@ function Reports({
             <input
               type="date"
               value={end}
+              max={today}
               onChange={(e) => setEnd(e.target.value)}
             />
           </Filter>
@@ -1496,7 +1530,11 @@ function Reports({
           </button>
         </div>
       </section>
-      <section id="report" className="rounded-2xl border bg-white shadow-sm">
+      <section
+        id="report"
+        className="overflow-hidden rounded-2xl border bg-white shadow-sm"
+      >
+        <div className="h-2 bg-gradient-to-r from-[#087f5b] via-emerald-500 to-teal-300" />
         <div className="flex flex-col gap-4 border-b p-6 sm:flex-row sm:items-center">
           <div className="grid h-16 w-28 place-items-center overflow-hidden rounded-xl border bg-slate-50">
             {company?.logoKey ? (
@@ -1522,7 +1560,7 @@ function Reports({
             </p>
             <p className="mt-1 text-sm font-semibold">
               Relatório de horas · {start.split("-").reverse().join("/")} a{" "}
-              {end.split("-").reverse().join("/")}
+              {effectiveEnd.split("-").reverse().join("/")}
             </p>
           </div>
         </div>
@@ -1535,6 +1573,48 @@ function Reports({
             color={balance >= 0 ? "text-emerald-700" : "text-red-600"}
           />
         </div>
+        {!!daily.length && (
+          <div className="border-b p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-extrabold text-slate-800">
+                Resumo por funcionário
+              </h3>
+              <span className="text-xs font-semibold text-slate-400">
+                {employeeSummary.length} funcionário(s)
+              </span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {employeeSummary.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <div className="mb-3 truncate font-extrabold text-slate-800">
+                    {item.name}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <span className="text-slate-500">Trabalhadas</span>
+                    <b className="text-right">{hm(item.worked)}</b>
+                    <span className="text-slate-500">Horas extras</span>
+                    <b className="text-right text-emerald-700">
+                      {hm(Math.max(0, item.balance))}
+                    </b>
+                    <span className="text-slate-500">Horas devedoras</span>
+                    <b className="text-right text-red-600">
+                      {hm(Math.max(0, -item.balance))}
+                    </b>
+                    <span className="text-slate-500">Faltas</span>
+                    <b
+                      className={`text-right ${item.absences ? "text-red-600" : "text-slate-700"}`}
+                    >
+                      {item.absences}
+                    </b>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {!daily.length ? (
           <Empty
             icon={BarChart3}
@@ -1542,9 +1622,9 @@ function Reports({
             text="Altere os filtros ou aguarde os primeiros registros."
           />
         ) : mode === "summary" ? (
-          <div className="p-6 text-sm text-slate-500">
-            Resumo gerado para {selected.length} funcionário(s), com{" "}
-            {daily.length} jornada(s) contabilizada(s).
+          <div className="p-6 text-center text-sm text-slate-500">
+            O detalhamento diário foi ocultado. Os totais acima consideram{" "}
+            {daily.length} jornada(s).
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1568,7 +1648,19 @@ function Reports({
               </thead>
               <tbody className="divide-y">
                 {daily.map((d) => (
-                  <tr key={d.key}>
+                  <tr
+                    key={d.key}
+                    className={
+                      d.status === "Falta" ||
+                      (d.incomplete && d.marks === "Sem registro")
+                        ? "bg-red-50/60"
+                        : d.off
+                          ? "bg-sky-50/50"
+                          : d.status === "Lançamento manual"
+                            ? "bg-emerald-50/40"
+                            : "hover:bg-slate-50/70"
+                    }
+                  >
                     <td className="px-5 py-4 font-bold">{d.name}</td>
                     <td className="px-5 py-4">
                       {d.date.split("-").reverse().join("/")}
@@ -1583,7 +1675,19 @@ function Reports({
                     </td>
                     <td className="px-5 py-4">
                       <span
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${d.off ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          d.status === "Falta"
+                            ? "bg-red-100 text-red-700"
+                            : d.status === "Atestado"
+                              ? "bg-amber-100 text-amber-700"
+                              : d.status === "Férias"
+                                ? "bg-violet-100 text-violet-700"
+                                : d.off
+                                  ? "bg-sky-100 text-sky-700"
+                                  : d.status === "Lançamento manual"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-slate-100 text-slate-600"
+                        }`}
                       >
                         {d.status}
                       </span>
