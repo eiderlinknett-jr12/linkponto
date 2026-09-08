@@ -215,7 +215,7 @@ export async function POST(request: Request) {
       const schedule = scheduleFrom(body),
         base = schedule.days.find((d) => d.enabled) || schedule.days[1];
       await env.DB.prepare(
-        `INSERT INTO employees (name,cpf,code,pin_hash,role,department,workdays,start_time,break_start,break_end,end_time,weekly_minutes,schedule_json,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO employees (name,cpf,code,pin_hash,role,department,workdays,start_time,break_start,break_end,end_time,weekly_minutes,schedule_json,calculation_start_date,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
         .bind(
           body.name.trim(),
@@ -231,6 +231,7 @@ export async function POST(request: Request) {
           base.end,
           schedule.weeklyMinutes,
           JSON.stringify(schedule),
+          body.calculationStartDate || localDate(),
           "active",
           now,
         )
@@ -269,8 +270,9 @@ export async function POST(request: Request) {
         base.end,
         weekly,
         JSON.stringify(schedule),
+        body.calculationStartDate || localDate(),
       ];
-      let sql = `UPDATE employees SET name=?,cpf=?,role=?,department=?,workdays=?,start_time=?,break_start=?,break_end=?,end_time=?,weekly_minutes=?,schedule_json=?`;
+      let sql = `UPDATE employees SET name=?,cpf=?,role=?,department=?,workdays=?,start_time=?,break_start=?,break_end=?,end_time=?,weekly_minutes=?,schedule_json=?,calculation_start_date=?`;
       if (body.pin) {
         if (!/^\d{4,6}$/.test(body.pin))
           return Response.json(

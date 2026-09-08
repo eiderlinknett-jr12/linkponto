@@ -11,7 +11,7 @@ export async function GET() {
     const employees = await env.DB.prepare(
       `SELECT id,name,cpf,code,role,department,workdays,start_time AS startTime,
       break_start AS breakStart,break_end AS breakEnd,end_time AS endTime,
-      weekly_minutes AS weeklyMinutes,schedule_json AS scheduleJson,status,created_at AS createdAt
+      weekly_minutes AS weeklyMinutes,schedule_json AS scheduleJson,calculation_start_date AS calculationStartDate,status,created_at AS createdAt
       FROM employees ORDER BY name`
     ).all();
     const punches = await env.DB.prepare(

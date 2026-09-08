@@ -62,6 +62,8 @@ type Employee = {
   endTime: string;
   weeklyMinutes: number;
   scheduleJson?: string | null;
+  calculationStartDate?: string | null;
+  createdAt?: string;
   status: string;
 };
 type Punch = {
@@ -1093,35 +1095,42 @@ function Reports({
     )
       dates.push(d.toISOString().slice(0, 10));
     return selected.flatMap((emp) =>
-      dates.map((date) => {
-        const key = `${emp.id}|${date}`,
-          list = groups[key] || [];
-        list.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
-        let minutes = 0;
-        for (let i = 0; i + 1 < list.length; i += 2)
-          minutes +=
-            (new Date(list[i + 1].occurredAt).getTime() -
-              new Date(list[i].occurredAt).getTime()) /
-            60000;
-        const info = scheduleInfo(emp, date),
-          workedMinutes = Math.max(0, Math.round(minutes));
-        return {
-          key,
-          name: emp.name,
-          date,
-          marks: list.length
-            ? list.map((x) => fmtTime(x.occurredAt)).join(" · ")
-            : info.off
-              ? "FOLGA"
-              : "Sem registro",
-          minutes: workedMinutes,
-          expected: info.expected,
-          balance: workedMinutes - info.expected,
-          incomplete: !info.off && (list.length === 0 || list.length % 2 !== 0),
-          status: info.label,
-          off: info.off,
-        };
-      }),
+      dates
+        .filter(
+          (date) =>
+            date >=
+            (emp.calculationStartDate || emp.createdAt?.slice(0, 10) || date),
+        )
+        .map((date) => {
+          const key = `${emp.id}|${date}`,
+            list = groups[key] || [];
+          list.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+          let minutes = 0;
+          for (let i = 0; i + 1 < list.length; i += 2)
+            minutes +=
+              (new Date(list[i + 1].occurredAt).getTime() -
+                new Date(list[i].occurredAt).getTime()) /
+              60000;
+          const info = scheduleInfo(emp, date),
+            workedMinutes = Math.max(0, Math.round(minutes));
+          return {
+            key,
+            name: emp.name,
+            date,
+            marks: list.length
+              ? list.map((x) => fmtTime(x.occurredAt)).join(" · ")
+              : info.off
+                ? "FOLGA"
+                : "Sem registro",
+            minutes: workedMinutes,
+            expected: info.expected,
+            balance: workedMinutes - info.expected,
+            incomplete:
+              !info.off && (list.length === 0 || list.length % 2 !== 0),
+            status: info.label,
+            off: info.off,
+          };
+        }),
     );
   }, [filtered, selected, start, end]);
   const worked = daily.reduce((s, d) => s + d.minutes, 0),
@@ -1741,6 +1750,18 @@ function EmployeeModal({
           defaultValue={employee?.name || ""}
         />
         <Field label="CPF *" name="cpf" defaultValue={employee?.cpf || ""} />
+        <Field
+          label="Início da apuração *"
+          name="calculationStartDate"
+          type="date"
+          defaultValue={
+            employee?.calculationStartDate ||
+            employee?.createdAt?.slice(0, 10) ||
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Fortaleza",
+            }).format(new Date())
+          }
+        />
         <Field
           label="Cargo *"
           name="role"

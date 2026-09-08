@@ -44,25 +44,69 @@ CREATE TABLE IF NOT EXISTS users (
  status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 `);
-const employeeColumns=sqlite.prepare("PRAGMA table_info(employees)").all() as Array<{name:string}>;
-if(!employeeColumns.some(c=>c.name==="schedule_json"))sqlite.exec("ALTER TABLE employees ADD COLUMN schedule_json TEXT");
-const now=new Date().toISOString();sqlite.prepare("INSERT OR IGNORE INTO users (name,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").run("Administrador","admin",hashPassword(process.env.ADMIN_PASSWORD||"admin@123"),"admin","active",now,now);
+const employeeColumns = sqlite
+  .prepare("PRAGMA table_info(employees)")
+  .all() as Array<{ name: string }>;
+if (!employeeColumns.some((c) => c.name === "schedule_json"))
+  sqlite.exec("ALTER TABLE employees ADD COLUMN schedule_json TEXT");
+if (!employeeColumns.some((c) => c.name === "calculation_start_date")) {
+  sqlite.exec("ALTER TABLE employees ADD COLUMN calculation_start_date TEXT");
+  sqlite.exec(
+    "UPDATE employees SET calculation_start_date=substr(created_at,1,10) WHERE calculation_start_date IS NULL",
+  );
+}
+const now = new Date().toISOString();
+sqlite
+  .prepare(
+    "INSERT OR IGNORE INTO users (name,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+  )
+  .run(
+    "Administrador",
+    "admin",
+    hashPassword(process.env.ADMIN_PASSWORD || "admin@123"),
+    "admin",
+    "active",
+    now,
+    now,
+  );
 
 class Statement {
   private params: unknown[] = [];
   constructor(private sql: string) {}
-  bind(...params: unknown[]) { this.params = params; return this; }
-  first<T>() { return sqlite.prepare(this.sql).get(...this.params) as T | null; }
-  all<T>() { return { results: sqlite.prepare(this.sql).all(...this.params) as T[] }; }
-  run() { return sqlite.prepare(this.sql).run(...this.params); }
+  bind(...params: unknown[]) {
+    this.params = params;
+    return this;
+  }
+  first<T>() {
+    return sqlite.prepare(this.sql).get(...this.params) as T | null;
+  }
+  all<T>() {
+    return { results: sqlite.prepare(this.sql).all(...this.params) as T[] };
+  }
+  run() {
+    return sqlite.prepare(this.sql).run(...this.params);
+  }
 }
 
-const DB = { prepare(sql: string) { return new Statement(sql); } };
+const DB = {
+  prepare(sql: string) {
+    return new Statement(sql);
+  },
+};
 const BUCKET = {
   async get(key: string) {
     const filePath = path.join(uploadsDir, path.basename(key));
     if (!fs.existsSync(filePath)) return null;
-    return { body: fs.readFileSync(filePath), httpMetadata: { contentType: key.endsWith(".webp") ? "image/webp" : key.endsWith(".jpg") || key.endsWith(".jpeg") ? "image/jpeg" : "image/png" } };
+    return {
+      body: fs.readFileSync(filePath),
+      httpMetadata: {
+        contentType: key.endsWith(".webp")
+          ? "image/webp"
+          : key.endsWith(".jpg") || key.endsWith(".jpeg")
+            ? "image/jpeg"
+            : "image/png",
+      },
+    };
   },
   async put(key: string, data: ArrayBuffer | Uint8Array) {
     const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
