@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS manual_entry_audit (
  id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, local_date TEXT NOT NULL,
  action TEXT NOT NULL, snapshot TEXT NOT NULL, performed_by TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS punch_edit_audit (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, punch_id INTEGER NOT NULL, employee_id INTEGER NOT NULL,
+ old_occurred_at TEXT NOT NULL, new_occurred_at TEXT NOT NULL, reason TEXT NOT NULL,
+ performed_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
 `);
 const employeeColumns = sqlite
   .prepare("PRAGMA table_info(employees)")

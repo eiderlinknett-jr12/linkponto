@@ -555,10 +555,126 @@ export async function POST(request: Request) {
     if (body.action === "review_adjustment") {
       if (!["approved", "rejected"].includes(body.status))
         return Response.json({ error: "Situação inválida." }, { status: 400 });
+      if (body.status === "approved") {
+        const adjustment = await env.DB.prepare(
+          "SELECT employee_id AS employeeId,punch_date AS punchDate,requested_time AS requestedTime,reason FROM adjustments WHERE id=?",
+        )
+          .bind(Number(body.id))
+          .first<{
+            employeeId: number;
+            punchDate: string;
+            requestedTime: string;
+            reason: string;
+          }>();
+        if (!adjustment)
+          return Response.json(
+            { error: "Solicitação não encontrada." },
+            { status: 404 },
+          );
+        const marks = await env.DB.prepare(
+          "SELECT id,occurred_at AS occurredAt FROM punches WHERE employee_id=? AND local_date=?",
+        )
+          .bind(adjustment.employeeId, adjustment.punchDate)
+          .all<{ id: number; occurredAt: string }>();
+        if (!marks.results.length)
+          return Response.json(
+            { error: "Não existe marcação nessa data. Use Lançamento manual." },
+            { status: 400 },
+          );
+        const correctedAt = new Date(
+            `${adjustment.punchDate}T${adjustment.requestedTime}:00-03:00`,
+          ).toISOString(),
+          targetTime = new Date(correctedAt).getTime(),
+          mark = [...marks.results].sort(
+            (a, b) =>
+              Math.abs(new Date(a.occurredAt).getTime() - targetTime) -
+              Math.abs(new Date(b.occurredAt).getTime() - targetTime),
+          )[0],
+          current = await getSessionUser();
+        await env.DB.prepare(
+          "UPDATE punches SET occurred_at=?,source='corrected' WHERE id=?",
+        )
+          .bind(correctedAt, mark.id)
+          .run();
+        await env.DB.prepare(
+          "INSERT INTO punch_edit_audit (punch_id,employee_id,old_occurred_at,new_occurred_at,reason,performed_by,created_at) VALUES (?,?,?,?,?,?,?)",
+        )
+          .bind(
+            mark.id,
+            adjustment.employeeId,
+            mark.occurredAt,
+            correctedAt,
+            adjustment.reason,
+            current?.username || "sistema",
+            now,
+          )
+          .run();
+      }
       await env.DB.prepare("UPDATE adjustments SET status=? WHERE id=?")
         .bind(body.status, Number(body.id))
         .run();
-      return Response.json({ ok: true, message: "Solicitação analisada." });
+      return Response.json({
+        ok: true,
+        message:
+          body.status === "approved"
+            ? "Correção aprovada e aplicada ao ponto."
+            : "Solicitação recusada.",
+      });
+    }
+    if (body.action === "edit_punch") {
+      const punchId = Number(body.punchId),
+        requestedTime = String(body.requestedTime || ""),
+        reason = String(body.reason || "").trim();
+      if (
+        !punchId ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedTime) ||
+        !reason
+      )
+        return Response.json(
+          { error: "Informe o novo horário e o motivo da correção." },
+          { status: 400 },
+        );
+      const punch = await env.DB.prepare(
+        "SELECT id,employee_id AS employeeId,local_date AS localDate,occurred_at AS occurredAt FROM punches WHERE id=?",
+      )
+        .bind(punchId)
+        .first<{
+          id: number;
+          employeeId: number;
+          localDate: string;
+          occurredAt: string;
+        }>();
+      if (!punch)
+        return Response.json(
+          { error: "Marcação não encontrada." },
+          { status: 404 },
+        );
+      const correctedAt = new Date(
+          `${punch.localDate}T${requestedTime}:00-03:00`,
+        ).toISOString(),
+        current = await getSessionUser();
+      await env.DB.prepare(
+        "UPDATE punches SET occurred_at=?,source='corrected' WHERE id=?",
+      )
+        .bind(correctedAt, punchId)
+        .run();
+      await env.DB.prepare(
+        "INSERT INTO punch_edit_audit (punch_id,employee_id,old_occurred_at,new_occurred_at,reason,performed_by,created_at) VALUES (?,?,?,?,?,?,?)",
+      )
+        .bind(
+          punchId,
+          punch.employeeId,
+          punch.occurredAt,
+          correctedAt,
+          reason,
+          current?.username || "sistema",
+          now,
+        )
+        .run();
+      return Response.json({
+        ok: true,
+        message: "Horário corrigido e registrado na auditoria.",
+      });
     }
     if (body.action === "save_company") {
       const values = [

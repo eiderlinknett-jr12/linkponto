@@ -467,6 +467,7 @@ export default function Home() {
               punches={data.punches}
               manualDays={data.manualDays}
               company={data.company}
+              action={action}
             />
           )}
           {active === "manual" && (
@@ -1007,7 +1008,7 @@ function Adjustments({
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <SectionHeader
         title="Solicitações de ajuste"
-        subtitle="Correções sem alterar o registro original."
+        subtitle="Ao aprovar, o horário é corrigido e o valor anterior fica salvo na auditoria."
         action="Solicitar ajuste"
         onClick={onNew}
         disabled={!employees.length}
@@ -1283,11 +1284,13 @@ function Reports({
   punches,
   manualDays,
   company,
+  action,
 }: {
   employees: Employee[];
   punches: Punch[];
   manualDays: ManualDay[];
   company: Company | null;
+  action: (p: Record<string, unknown>) => Promise<any>;
 }) {
   const now = new Date(),
     today = new Intl.DateTimeFormat("en-CA", {
@@ -1301,7 +1304,8 @@ function Reports({
     [department, setDepartment] = useState("all"),
     [start, setStart] = useState(first),
     [end, setEnd] = useState(last),
-    [mode, setMode] = useState("detailed");
+    [mode, setMode] = useState("detailed"),
+    [editingPunch, setEditingPunch] = useState<Punch | null>(null);
   const effectiveEnd = end < today ? end : today;
   const departments = [...new Set(employees.map((e) => e.department))];
   const selected = employees.filter(
@@ -1395,6 +1399,7 @@ function Reports({
               (list.length === 0 || list.length % 2 !== 0),
             status: manual ? manualLabels[manual.status] : info.label,
             off: manualOff || info.off,
+            punchList: list,
           };
         }),
     );
@@ -1536,12 +1541,12 @@ function Reports({
       >
         <div className="h-2 bg-gradient-to-r from-[#087f5b] via-emerald-500 to-teal-300" />
         <div className="flex flex-col gap-4 border-b p-6 sm:flex-row sm:items-center">
-          <div className="grid h-16 w-28 place-items-center overflow-hidden rounded-xl border bg-slate-50">
+          <div className="grid h-20 w-40 shrink-0 place-items-center overflow-hidden rounded-xl border bg-white shadow-sm">
             {company?.logoKey ? (
               <img
                 src="/api/logo"
                 alt="Logo da empresa"
-                className="max-h-full max-w-full object-contain"
+                className="h-full w-full object-contain p-2"
               />
             ) : (
               <Building2 className="text-slate-300" />
@@ -1666,7 +1671,23 @@ function Reports({
                       {d.date.split("-").reverse().join("/")}
                     </td>
                     <td className="px-5 py-4 font-mono text-sm">
-                      {d.marks}
+                      {d.punchList.length ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {d.punchList.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setEditingPunch(p)}
+                              title="Clique para corrigir esta marcação"
+                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-bold text-slate-700 shadow-sm transition hover:border-emerald-400 hover:text-emerald-700"
+                            >
+                              {fmtTime(p.occurredAt)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        d.marks
+                      )}
                       {d.incomplete && (
                         <span className="ml-2 text-xs font-bold text-amber-600">
                           Incompleto
@@ -1706,7 +1727,88 @@ function Reports({
           </div>
         )}
       </section>
+      {editingPunch && (
+        <PunchEditModal
+          punch={editingPunch}
+          close={() => setEditingPunch(null)}
+          submit={async (payload) => {
+            const ok = await action(payload);
+            if (ok) setEditingPunch(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function PunchEditModal({
+  punch,
+  close,
+  submit,
+}: {
+  punch: Punch;
+  close: () => void;
+  submit: (payload: Record<string, unknown>) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    await submit({
+      action: "edit_punch",
+      punchId: punch.id,
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+    });
+    setBusy(false);
+  }
+  return (
+    <Modal title="Corrigir marcação de ponto" close={close}>
+      <form onSubmit={save} className="space-y-4">
+        <div className="rounded-xl bg-slate-50 p-4 text-sm">
+          <b>{punch.name}</b>
+          <p className="mt-1 text-slate-500">
+            {punch.localDate.split("-").reverse().join("/")} · Horário atual:{" "}
+            {fmtTime(punch.occurredAt)}
+          </p>
+        </div>
+        <Field
+          label="Novo horário *"
+          name="requestedTime"
+          type="time"
+          required
+          defaultValue={fmtTime(punch.occurredAt)}
+        />
+        <label className="block text-sm font-bold">
+          Motivo da correção *
+          <textarea
+            name="reason"
+            required
+            rows={3}
+            className="mt-2 w-full rounded-xl border p-3"
+            placeholder="Ex.: marcação realizada em horário incorreto"
+          />
+        </label>
+        <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+          O horário será alterado no relatório e o valor anterior ficará
+          preservado no histórico de auditoria.
+        </p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={close}
+            className="h-12 flex-1 rounded-xl border font-bold"
+          >
+            Cancelar
+          </button>
+          <button
+            disabled={busy}
+            className="h-12 flex-1 rounded-xl bg-[#087f5b] font-bold text-white disabled:opacity-50"
+          >
+            {busy ? "Salvando..." : "Confirmar correção"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
