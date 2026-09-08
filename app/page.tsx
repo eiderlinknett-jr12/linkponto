@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Check,
   Clock3,
+  ClipboardEdit,
   FileText,
   Fingerprint,
   ImageUp,
@@ -118,12 +119,22 @@ type CurrentUser = {
   username: string;
   role: "admin" | "manager" | "employee";
 };
+type ManualDay = {
+  id: number;
+  employeeId: number;
+  localDate: string;
+  status: string;
+  note: string;
+  createdBy: string;
+  updatedAt: string;
+};
 type Data = {
   employees: Employee[];
   punches: Punch[];
   adjustments: Adjustment[];
   company: Company | null;
   users: AccessUser[];
+  manualDays: ManualDay[];
   currentUser: CurrentUser | null;
 };
 const nav = [
@@ -133,6 +144,7 @@ const nav = [
   ["journeys", "Jornadas", CalendarDays],
   ["adjustments", "Correções de ponto", TimerReset],
   ["reports", "Relatórios", FileText],
+  ["manual", "Lançamento manual", ClipboardEdit],
   ["users", "Usuários e acessos", ShieldCheck],
   ["settings", "Configurações", Settings],
 ] as const;
@@ -226,6 +238,7 @@ export default function Home() {
       adjustments: [],
       company: null,
       users: [],
+      manualDays: [],
       currentUser: null,
     }),
     [loading, setLoading] = useState(true),
@@ -452,7 +465,16 @@ export default function Home() {
             <Reports
               employees={activeEmployees}
               punches={data.punches}
+              manualDays={data.manualDays}
               company={data.company}
+            />
+          )}
+          {active === "manual" && (
+            <ManualEntries
+              employees={activeEmployees}
+              punches={data.punches}
+              manualDays={data.manualDays}
+              action={action}
             />
           )}
           {active === "users" && (
@@ -1049,13 +1071,222 @@ function Adjustments({
   );
 }
 
+function ManualEntries({
+  employees,
+  punches,
+  manualDays,
+  action,
+}: {
+  employees: Employee[];
+  punches: Punch[];
+  manualDays: ManualDay[];
+  action: (p: Record<string, unknown>) => Promise<any>;
+}) {
+  const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Fortaleza",
+    }).format(new Date()),
+    [employeeId, setEmployeeId] = useState(
+      employees[0] ? String(employees[0].id) : "",
+    ),
+    [date, setDate] = useState(today),
+    [status, setStatus] = useState("worked"),
+    [entry, setEntry] = useState(""),
+    [breakStart, setBreakStart] = useState(""),
+    [breakEnd, setBreakEnd] = useState(""),
+    [exit, setExit] = useState(""),
+    [note, setNote] = useState("");
+  useEffect(() => {
+    const id = Number(employeeId),
+      day = manualDays.find((x) => x.employeeId === id && x.localDate === date),
+      marks = punches
+        .filter(
+          (p) =>
+            p.employeeId === id &&
+            p.localDate === date &&
+            p.source === "manual",
+        )
+        .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+    setStatus(day?.status || "worked");
+    setNote(day?.note || "");
+    const times = marks.map((m) =>
+      new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Fortaleza",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(m.occurredAt)),
+    );
+    setEntry(times[0] || "");
+    if (times.length === 4) {
+      setBreakStart(times[1]);
+      setBreakEnd(times[2]);
+      setExit(times[3]);
+    } else {
+      setBreakStart("");
+      setBreakEnd("");
+      setExit(times[1] || "");
+    }
+  }, [employeeId, date, manualDays, punches]);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await action({
+      action: "save_manual_day",
+      employeeId,
+      localDate: date,
+      status,
+      entry,
+      breakStart,
+      breakEnd,
+      exit,
+      note,
+    });
+    if (ok) {
+      const next = new Date(`${date}T12:00:00`);
+      next.setDate(next.getDate() + 1);
+      const value = next.toISOString().slice(0, 10);
+      if (value <= today) setDate(value);
+    }
+  }
+  const existing = manualDays.some(
+      (x) => x.employeeId === Number(employeeId) && x.localDate === date,
+    ),
+    worked = status === "worked";
+  return (
+    <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+      <section className="rounded-2xl border bg-white shadow-sm">
+        <div className="border-b p-6">
+          <h2 className="text-lg font-bold">Lançamento manual do ponto</h2>
+          <p className="text-sm text-slate-500">
+            Transcreva livros de ponto ou faça lançamentos autorizados pelo RH.
+          </p>
+        </div>
+        <form onSubmit={save} className="grid gap-4 p-6 sm:grid-cols-2">
+          <label className="text-sm font-bold">
+            Funcionário
+            <select
+              required
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
+              className="mt-2 h-12 w-full rounded-xl border bg-white px-3"
+            >
+              <option value="">Selecione</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} · {e.code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-bold">
+            Data
+            <input
+              required
+              type="date"
+              max={today}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="mt-2 h-12 w-full rounded-xl border px-3"
+            />
+          </label>
+          <label className="sm:col-span-2 text-sm font-bold">
+            Situação
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="mt-2 h-12 w-full rounded-xl border bg-white px-3"
+            >
+              <option value="worked">Trabalhou</option>
+              <option value="absence">Falta</option>
+              <option value="off">Folga informada</option>
+              <option value="medical">Atestado</option>
+              <option value="vacation">Férias</option>
+            </select>
+          </label>
+          {worked && (
+            <>
+              <Field
+                label="Entrada *"
+                type="time"
+                value={entry}
+                onChange={(e: any) => setEntry(e.target.value)}
+              />
+              <Field
+                label="Início do intervalo"
+                type="time"
+                value={breakStart}
+                onChange={(e: any) => setBreakStart(e.target.value)}
+              />
+              <Field
+                label="Retorno do intervalo"
+                type="time"
+                value={breakEnd}
+                onChange={(e: any) => setBreakEnd(e.target.value)}
+              />
+              <Field
+                label="Saída *"
+                type="time"
+                value={exit}
+                onChange={(e: any) => setExit(e.target.value)}
+              />
+            </>
+          )}
+          <label className="sm:col-span-2 text-sm font-bold">
+            Justificativa / observação
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              className="mt-2 w-full rounded-xl border p-3"
+              placeholder="Ex.: Transcrição do livro físico de ponto"
+            />
+          </label>
+          <div className="sm:col-span-2 flex flex-wrap gap-3">
+            <button className="rounded-xl bg-[#087f5b] px-6 py-3 font-bold text-white">
+              Salvar e avançar
+            </button>
+            {existing && (
+              <button
+                type="button"
+                onClick={() =>
+                  action({
+                    action: "delete_manual_day",
+                    employeeId,
+                    localDate: date,
+                  })
+                }
+                className="rounded-xl border border-red-200 px-5 py-3 font-bold text-red-600"
+              >
+                Remover lançamento
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
+      <aside className="h-fit rounded-2xl border bg-white p-6 shadow-sm">
+        <ClipboardEdit className="text-[#087f5b]" size={30} />
+        <h3 className="mt-4 font-bold">Importação segura</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Os pontos são identificados como <b>manual/RH</b>. Alterações e
+          exclusões ficam registradas para auditoria.
+        </p>
+        <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+          Cadastre primeiro os funcionários e depois transcreva cada dia do
+          livro físico, de 01/09 até hoje.
+        </p>
+      </aside>
+    </div>
+  );
+}
+
 function Reports({
   employees,
   punches,
+  manualDays,
   company,
 }: {
   employees: Employee[];
   punches: Punch[];
+  manualDays: ManualDay[];
   company: Company | null;
 }) {
   const now = new Date(),
@@ -1112,6 +1343,20 @@ function Reports({
                 new Date(list[i].occurredAt).getTime()) /
               60000;
           const info = scheduleInfo(emp, date),
+            manual = manualDays.find(
+              (x) => x.employeeId === emp.id && x.localDate === date,
+            ),
+            manualLabels: Record<string, string> = {
+              worked: "Lançamento manual",
+              absence: "Falta",
+              off: "Folga informada",
+              medical: "Atestado",
+              vacation: "Férias",
+            },
+            manualOff = Boolean(
+              manual && ["off", "medical", "vacation"].includes(manual.status),
+            ),
+            finalExpected = manualOff ? 0 : info.expected,
             workedMinutes = Math.max(0, Math.round(minutes));
           return {
             key,
@@ -1119,20 +1364,26 @@ function Reports({
             date,
             marks: list.length
               ? list.map((x) => fmtTime(x.occurredAt)).join(" · ")
-              : info.off
-                ? "FOLGA"
-                : "Sem registro",
+              : manual?.status === "absence"
+                ? "FALTA"
+                : manualOff
+                  ? manualLabels[manual!.status].toUpperCase()
+                  : info.off
+                    ? "FOLGA"
+                    : "Sem registro",
             minutes: workedMinutes,
-            expected: info.expected,
-            balance: workedMinutes - info.expected,
+            expected: finalExpected,
+            balance: workedMinutes - finalExpected,
             incomplete:
-              !info.off && (list.length === 0 || list.length % 2 !== 0),
-            status: info.label,
-            off: info.off,
+              !manual &&
+              !info.off &&
+              (list.length === 0 || list.length % 2 !== 0),
+            status: manual ? manualLabels[manual.status] : info.label,
+            off: manualOff || info.off,
           };
         }),
     );
-  }, [filtered, selected, start, end]);
+  }, [filtered, selected, start, end, manualDays]);
   const worked = daily.reduce((s, d) => s + d.minutes, 0),
     expected = daily.reduce((s, d) => s + d.expected, 0),
     balance = worked - expected,

@@ -196,6 +196,142 @@ export async function POST(request: Request) {
         message: "Situação do usuário atualizada.",
       });
     }
+    if (body.action === "save_manual_day") {
+      const employeeId = Number(body.employeeId),
+        date = String(body.localDate || ""),
+        status = String(body.status || "worked"),
+        allowed = ["worked", "absence", "off", "medical", "vacation"];
+      if (
+        !employeeId ||
+        !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date) ||
+        !allowed.includes(status)
+      )
+        return Response.json(
+          { error: "Preencha funcionário, data e situação." },
+          { status: 400 },
+        );
+      if (status === "worked" && (!body.entry || !body.exit))
+        return Response.json(
+          { error: "Informe pelo menos a entrada e a saída." },
+          { status: 400 },
+        );
+      if (
+        status === "worked" &&
+        Boolean(body.breakStart) !== Boolean(body.breakEnd)
+      )
+        return Response.json(
+          {
+            error:
+              "Preencha os dois horários do intervalo ou deixe ambos vazios.",
+          },
+          { status: 400 },
+        );
+      const current = await getSessionUser(),
+        note = String(body.note || "").trim();
+      await env.DB.prepare(
+        "DELETE FROM punches WHERE employee_id=? AND local_date=? AND source='manual'",
+      )
+        .bind(employeeId, date)
+        .run();
+      if (status === "worked") {
+        const marks = [
+          { kind: "Entrada", time: body.entry },
+          { kind: "Início do intervalo", time: body.breakStart },
+          { kind: "Retorno do intervalo", time: body.breakEnd },
+          { kind: "Saída", time: body.exit },
+        ].filter((x) => x.time);
+        for (const mark of marks) {
+          const occurredAt = new Date(
+            `${date}T${mark.time}:00-03:00`,
+          ).toISOString();
+          await env.DB.prepare(
+            "INSERT INTO punches (employee_id,kind,occurred_at,local_date,source,device,created_at) VALUES (?,?,?,?,?,?,?)",
+          )
+            .bind(
+              employeeId,
+              mark.kind,
+              occurredAt,
+              date,
+              "manual",
+              `RH: ${current?.username || "sistema"}`,
+              now,
+            )
+            .run();
+        }
+      }
+      await env.DB.prepare(
+        `INSERT INTO manual_day_entries (employee_id,local_date,status,note,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(employee_id,local_date) DO UPDATE SET status=excluded.status,note=excluded.note,created_by=excluded.created_by,updated_at=excluded.updated_at`,
+      )
+        .bind(
+          employeeId,
+          date,
+          status,
+          note,
+          current?.username || "sistema",
+          now,
+          now,
+        )
+        .run();
+      await env.DB.prepare(
+        "INSERT INTO manual_entry_audit (employee_id,local_date,action,snapshot,performed_by,created_at) VALUES (?,?,?,?,?,?)",
+      )
+        .bind(
+          employeeId,
+          date,
+          "save",
+          JSON.stringify({
+            status,
+            note,
+            entry: body.entry || null,
+            breakStart: body.breakStart || null,
+            breakEnd: body.breakEnd || null,
+            exit: body.exit || null,
+          }),
+          current?.username || "sistema",
+          now,
+        )
+        .run();
+      return Response.json({
+        ok: true,
+        message: "Lançamento manual salvo com sucesso.",
+      });
+    }
+    if (body.action === "delete_manual_day") {
+      const employeeId = Number(body.employeeId),
+        date = String(body.localDate || ""),
+        current = await getSessionUser();
+      if (!employeeId || !date)
+        return Response.json(
+          { error: "Lançamento inválido." },
+          { status: 400 },
+        );
+      await env.DB.prepare(
+        "DELETE FROM punches WHERE employee_id=? AND local_date=? AND source='manual'",
+      )
+        .bind(employeeId, date)
+        .run();
+      await env.DB.prepare(
+        "DELETE FROM manual_day_entries WHERE employee_id=? AND local_date=?",
+      )
+        .bind(employeeId, date)
+        .run();
+      await env.DB.prepare(
+        "INSERT INTO manual_entry_audit (employee_id,local_date,action,snapshot,performed_by,created_at) VALUES (?,?,?,?,?,?)",
+      )
+        .bind(
+          employeeId,
+          date,
+          "delete",
+          "{}",
+          current?.username || "sistema",
+          now,
+        )
+        .run();
+      return Response.json({
+        ok: true,
+        message: "Lançamento manual removido.",
+      });
+    }
     if (body.action === "create_employee") {
       const required = ["name", "cpf", "role", "pin"];
       if (required.some((k) => !String(body[k] ?? "").trim()))

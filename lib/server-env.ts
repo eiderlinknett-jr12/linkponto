@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS users (
  password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'employee', employee_id INTEGER REFERENCES employees(id),
  status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS manual_day_entries (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL REFERENCES employees(id),
+ local_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'worked', note TEXT NOT NULL DEFAULT '',
+ created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ UNIQUE(employee_id,local_date)
+);
+CREATE TABLE IF NOT EXISTS manual_entry_audit (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, local_date TEXT NOT NULL,
+ action TEXT NOT NULL, snapshot TEXT NOT NULL, performed_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
 `);
 const employeeColumns = sqlite
   .prepare("PRAGMA table_info(employees)")
