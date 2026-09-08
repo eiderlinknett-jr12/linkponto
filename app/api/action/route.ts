@@ -525,9 +525,16 @@ export async function POST(request: Request) {
       });
     }
     if (body.action === "create_adjustment") {
+      const allowedKinds = [
+        "Entrada",
+        "Início do intervalo",
+        "Retorno do intervalo",
+        "Saída",
+      ];
       if (
         !body.employeeId ||
         !body.punchDate ||
+        !body.requestedKind ||
         !body.requestedTime ||
         !body.reason?.trim()
       )
@@ -535,12 +542,18 @@ export async function POST(request: Request) {
           { error: "Preencha todos os campos." },
           { status: 400 },
         );
+      if (!allowedKinds.includes(String(body.requestedKind)))
+        return Response.json(
+          { error: "Selecione um período válido para o ajuste." },
+          { status: 400 },
+        );
       await env.DB.prepare(
-        "INSERT INTO adjustments (employee_id,punch_date,requested_time,reason,status,created_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO adjustments (employee_id,punch_date,requested_kind,requested_time,reason,status,created_at) VALUES (?,?,?,?,?,?,?)",
       )
         .bind(
           Number(body.employeeId),
           body.punchDate,
+          body.requestedKind,
           body.requestedTime,
           body.reason.trim(),
           "pending",
@@ -557,12 +570,13 @@ export async function POST(request: Request) {
         return Response.json({ error: "Situação inválida." }, { status: 400 });
       if (body.status === "approved") {
         const adjustment = await env.DB.prepare(
-          "SELECT employee_id AS employeeId,punch_date AS punchDate,requested_time AS requestedTime,reason FROM adjustments WHERE id=?",
+          "SELECT employee_id AS employeeId,punch_date AS punchDate,requested_kind AS requestedKind,requested_time AS requestedTime,reason FROM adjustments WHERE id=?",
         )
           .bind(Number(body.id))
           .first<{
             employeeId: number;
             punchDate: string;
+            requestedKind: string | null;
             requestedTime: string;
             reason: string;
           }>();
@@ -572,10 +586,10 @@ export async function POST(request: Request) {
             { status: 404 },
           );
         const marks = await env.DB.prepare(
-          "SELECT id,occurred_at AS occurredAt FROM punches WHERE employee_id=? AND local_date=?",
+          "SELECT id,kind,occurred_at AS occurredAt FROM punches WHERE employee_id=? AND local_date=?",
         )
           .bind(adjustment.employeeId, adjustment.punchDate)
-          .all<{ id: number; occurredAt: string }>();
+          .all<{ id: number; kind: string; occurredAt: string }>();
         if (!marks.results.length)
           return Response.json(
             { error: "Não existe marcação nessa data. Use Lançamento manual." },
@@ -585,12 +599,24 @@ export async function POST(request: Request) {
             `${adjustment.punchDate}T${adjustment.requestedTime}:00-03:00`,
           ).toISOString(),
           targetTime = new Date(correctedAt).getTime(),
-          mark = [...marks.results].sort(
+          candidates = adjustment.requestedKind
+            ? marks.results.filter(
+                (item) => item.kind === adjustment.requestedKind,
+              )
+            : marks.results,
+          mark = [...(candidates.length ? candidates : marks.results)].sort(
             (a, b) =>
               Math.abs(new Date(a.occurredAt).getTime() - targetTime) -
               Math.abs(new Date(b.occurredAt).getTime() - targetTime),
           )[0],
           current = await getSessionUser();
+        if (adjustment.requestedKind && !candidates.length)
+          return Response.json(
+            {
+              error: `Não existe uma marcação de “${adjustment.requestedKind}” nessa data. Use Lançamento manual.`,
+            },
+            { status: 400 },
+          );
         await env.DB.prepare(
           "UPDATE punches SET occurred_at=?,source='corrected' WHERE id=?",
         )

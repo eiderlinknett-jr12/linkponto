@@ -81,6 +81,7 @@ type Adjustment = {
   employeeId: number;
   name: string;
   punchDate: string;
+  requestedKind?: string | null;
   requestedTime: string;
   reason: string;
   status: string;
@@ -1033,7 +1034,8 @@ function Adjustments({
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
                   {a.punchDate.split("-").reverse().join("/")} às{" "}
-                  {a.requestedTime} · {a.reason}
+                  {a.requestedTime} ·{" "}
+                  {a.requestedKind || "Marcação não informada"} · {a.reason}
                 </p>
               </div>
               {a.status === "pending" && (
@@ -2506,8 +2508,22 @@ function AdjustmentModal({
             ))}
           </select>
         </label>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Data" name="punchDate" type="date" />
+          <label className="block text-sm font-bold">
+            Período do ajuste
+            <select
+              name="requestedKind"
+              required
+              className="mt-2 h-12 w-full rounded-xl border bg-white px-3"
+            >
+              <option value="">Selecione</option>
+              <option value="Entrada">Entrada</option>
+              <option value="Início do intervalo">Início do intervalo</option>
+              <option value="Retorno do intervalo">Retorno do intervalo</option>
+              <option value="Saída">Saída</option>
+            </select>
+          </label>
           <Field label="Horário" name="requestedTime" type="time" />
         </div>
         <label className="block text-sm font-bold">

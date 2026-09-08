@@ -31,7 +31,7 @@ export async function GET() {
     ).all();
     const adjustments = await env.DB.prepare(
       `SELECT a.id,a.employee_id AS employeeId,e.name,a.punch_date AS punchDate,
-      a.requested_time AS requestedTime,a.reason,a.status,a.created_at AS createdAt
+      a.requested_kind AS requestedKind,a.requested_time AS requestedTime,a.reason,a.status,a.created_at AS createdAt
       FROM adjustments a JOIN employees e ON e.id=a.employee_id ORDER BY a.created_at DESC`,
     ).all();
     const company = await env.DB.prepare(

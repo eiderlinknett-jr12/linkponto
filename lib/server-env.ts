@@ -70,20 +70,27 @@ if (!employeeColumns.some((c) => c.name === "calculation_start_date")) {
     "UPDATE employees SET calculation_start_date=substr(created_at,1,10) WHERE calculation_start_date IS NULL",
   );
 }
+const adjustmentColumns = sqlite
+  .prepare("PRAGMA table_info(adjustments)")
+  .all() as Array<{ name: string }>;
+if (!adjustmentColumns.some((c) => c.name === "requested_kind"))
+  sqlite.exec("ALTER TABLE adjustments ADD COLUMN requested_kind TEXT");
 const now = new Date().toISOString();
-sqlite
-  .prepare(
-    "INSERT OR IGNORE INTO users (name,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
-  )
-  .run(
-    "Administrador",
-    "admin",
-    hashPassword(process.env.ADMIN_PASSWORD || "admin@123"),
-    "admin",
-    "active",
-    now,
-    now,
-  );
+const initialAdminPassword = process.env.ADMIN_PASSWORD;
+if (initialAdminPassword)
+  sqlite
+    .prepare(
+      "INSERT OR IGNORE INTO users (name,username,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+    )
+    .run(
+      "Administrador",
+      "admin",
+      hashPassword(initialAdminPassword),
+      "admin",
+      "active",
+      now,
+      now,
+    );
 
 class Statement {
   private params: unknown[] = [];
