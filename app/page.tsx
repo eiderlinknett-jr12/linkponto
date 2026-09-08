@@ -129,6 +129,16 @@ type ManualDay = {
   createdBy: string;
   updatedAt: string;
 };
+type DayOffSwap = {
+  id: number;
+  employeeId: number;
+  name: string;
+  originalOffDate: string;
+  replacementOffDate: string;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+};
 type Data = {
   employees: Employee[];
   punches: Punch[];
@@ -136,6 +146,7 @@ type Data = {
   company: Company | null;
   users: AccessUser[];
   manualDays: ManualDay[];
+  dayOffSwaps: DayOffSwap[];
   currentUser: CurrentUser | null;
 };
 const nav = [
@@ -143,6 +154,7 @@ const nav = [
   ["punch", "Bater ponto", Fingerprint],
   ["employees", "Funcionários", UsersRound],
   ["journeys", "Jornadas", CalendarDays],
+  ["swaps", "Trocas de folga", CalendarDays],
   ["adjustments", "Correções de ponto", TimerReset],
   ["reports", "Relatórios", FileText],
   ["manual", "Lançamento manual", ClipboardEdit],
@@ -240,6 +252,7 @@ export default function Home() {
       company: null,
       users: [],
       manualDays: [],
+      dayOffSwaps: [],
       currentUser: null,
     }),
     [loading, setLoading] = useState(true),
@@ -462,11 +475,19 @@ export default function Home() {
               action={action}
             />
           )}
+          {active === "swaps" && (
+            <DayOffSwaps
+              employees={activeEmployees}
+              swaps={data.dayOffSwaps}
+              action={action}
+            />
+          )}
           {active === "reports" && (
             <Reports
               employees={activeEmployees}
               punches={data.punches}
               manualDays={data.manualDays}
+              dayOffSwaps={data.dayOffSwaps}
               company={data.company}
               action={action}
             />
@@ -1281,16 +1302,136 @@ function ManualEntries({
   );
 }
 
+function DayOffSwaps({
+  employees,
+  swaps,
+  action,
+}: {
+  employees: Employee[];
+  swaps: DayOffSwap[];
+  action: (p: Record<string, unknown>) => Promise<any>;
+}) {
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget,
+      ok = await action({
+        action: "create_day_off_swap",
+        ...Object.fromEntries(new FormData(form)),
+      });
+    if (ok) form.reset();
+  }
+  return (
+    <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
+      <section className="h-fit rounded-2xl border bg-white shadow-sm">
+        <div className="border-b p-6">
+          <h2 className="text-lg font-extrabold">Registrar troca de folga</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            A alteração vale somente para as datas informadas e não modifica a
+            jornada fixa.
+          </p>
+        </div>
+        <form onSubmit={save} className="space-y-4 p-6">
+          <label className="block text-sm font-bold">
+            Funcionário
+            <select
+              name="employeeId"
+              required
+              className="mt-2 h-12 w-full rounded-xl border bg-white px-3"
+            >
+              <option value="">Selecione</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Field
+            label="Data da folga original *"
+            name="originalOffDate"
+            type="date"
+          />
+          <Field
+            label="Nova data da folga *"
+            name="replacementOffDate"
+            type="date"
+          />
+          <label className="block text-sm font-bold">
+            Motivo
+            <textarea
+              name="reason"
+              required
+              rows={3}
+              className="mt-2 w-full rounded-xl border p-3"
+              placeholder="Ex.: necessidade operacional"
+            />
+          </label>
+          <button className="h-12 w-full rounded-xl bg-[#087f5b] font-bold text-white">
+            Registrar troca
+          </button>
+        </form>
+      </section>
+      <section className="rounded-2xl border bg-white shadow-sm">
+        <div className="border-b p-6">
+          <h2 className="text-lg font-extrabold">Trocas registradas</h2>
+          <p className="text-sm text-slate-500">
+            Exceções de folga lançadas pelo RH.
+          </p>
+        </div>
+        {!swaps.length ? (
+          <Empty
+            icon={CalendarDays}
+            title="Nenhuma troca registrada"
+            text="As trocas de folga aparecerão aqui."
+          />
+        ) : (
+          <div className="divide-y">
+            {swaps.map((swap) => (
+              <div
+                key={swap.id}
+                className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center"
+              >
+                <div className="flex-1">
+                  <b>{swap.name}</b>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Folga de{" "}
+                    {swap.originalOffDate.split("-").reverse().join("/")}{" "}
+                    transferida para{" "}
+                    {swap.replacementOffDate.split("-").reverse().join("/")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {swap.reason} · por {swap.createdBy}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    action({ action: "delete_day_off_swap", id: swap.id })
+                  }
+                  className="rounded-xl border border-red-200 px-4 py-2 text-sm font-bold text-red-600"
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function Reports({
   employees,
   punches,
   manualDays,
+  dayOffSwaps,
   company,
   action,
 }: {
   employees: Employee[];
   punches: Punch[];
   manualDays: ManualDay[];
+  dayOffSwaps: DayOffSwap[];
   company: Company | null;
   action: (p: Record<string, unknown>) => Promise<any>;
 }) {
@@ -1364,6 +1505,12 @@ function Reports({
                 new Date(list[i].occurredAt).getTime()) /
               60000;
           const info = scheduleInfo(emp, date),
+            swapOriginal = dayOffSwaps.find(
+              (x) => x.employeeId === emp.id && x.originalOffDate === date,
+            ),
+            swapReplacement = dayOffSwaps.find(
+              (x) => x.employeeId === emp.id && x.replacementOffDate === date,
+            ),
             manual = manualDays.find(
               (x) => x.employeeId === emp.id && x.localDate === date,
             ),
@@ -1377,7 +1524,13 @@ function Reports({
             manualOff = Boolean(
               manual && ["off", "medical", "vacation"].includes(manual.status),
             ),
-            finalExpected = manualOff ? 0 : info.expected,
+            finalExpected = manualOff
+              ? 0
+              : swapReplacement
+                ? 0
+                : swapOriginal
+                  ? scheduleInfo(emp, swapOriginal.replacementOffDate).expected
+                  : info.expected,
             workedMinutes = Math.max(0, Math.round(minutes));
           return {
             key,
@@ -1389,7 +1542,7 @@ function Reports({
                 ? "FALTA"
                 : manualOff
                   ? manualLabels[manual!.status].toUpperCase()
-                  : info.off
+                  : info.off && !swapOriginal
                     ? "FOLGA"
                     : "Sem registro",
             minutes: workedMinutes,
@@ -1399,13 +1552,30 @@ function Reports({
               !manual &&
               !info.off &&
               (list.length === 0 || list.length % 2 !== 0),
-            status: manual ? manualLabels[manual.status] : info.label,
-            off: manualOff || info.off,
+            status: manual
+              ? manualLabels[manual.status]
+              : swapReplacement
+                ? "Folga transferida"
+                : swapOriginal
+                  ? "Trabalho por troca de folga"
+                  : info.label,
+            off:
+              manualOff ||
+              Boolean(swapReplacement) ||
+              (info.off && !swapOriginal),
             punchList: list,
           };
         }),
     );
-  }, [filtered, selected, start, effectiveEnd, manualDays, punches]);
+  }, [
+    filtered,
+    selected,
+    start,
+    effectiveEnd,
+    manualDays,
+    punches,
+    dayOffSwaps,
+  ]);
   const worked = daily.reduce((s, d) => s + d.minutes, 0),
     expected = daily.reduce((s, d) => s + d.expected, 0),
     balance = worked - expected,

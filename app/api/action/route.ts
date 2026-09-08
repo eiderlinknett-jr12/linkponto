@@ -565,6 +565,42 @@ export async function POST(request: Request) {
         message: "Solicitação enviada para análise.",
       });
     }
+    if (body.action === "create_day_off_swap") {
+      const employeeId = Number(body.employeeId),
+        originalOffDate = String(body.originalOffDate || ""),
+        replacementOffDate = String(body.replacementOffDate || ""),
+        reason = String(body.reason || "").trim(),
+        current = await getSessionUser();
+      if (!employeeId || !originalOffDate || !replacementOffDate || !reason)
+        return Response.json(
+          { error: "Preencha funcionário, as duas datas e o motivo." },
+          { status: 400 },
+        );
+      if (originalOffDate === replacementOffDate)
+        return Response.json(
+          { error: "A nova folga deve ser em uma data diferente." },
+          { status: 400 },
+        );
+      await env.DB.prepare(
+        "INSERT INTO day_off_swaps (employee_id,original_off_date,replacement_off_date,reason,created_by,created_at) VALUES (?,?,?,?,?,?)",
+      )
+        .bind(
+          employeeId,
+          originalOffDate,
+          replacementOffDate,
+          reason,
+          current?.username || "sistema",
+          now,
+        )
+        .run();
+      return Response.json({ ok: true, message: "Troca de folga registrada." });
+    }
+    if (body.action === "delete_day_off_swap") {
+      await env.DB.prepare("DELETE FROM day_off_swaps WHERE id=?")
+        .bind(Number(body.id))
+        .run();
+      return Response.json({ ok: true, message: "Troca de folga removida." });
+    }
     if (body.action === "review_adjustment") {
       if (!["approved", "rejected"].includes(body.status))
         return Response.json({ error: "Situação inválida." }, { status: 400 });

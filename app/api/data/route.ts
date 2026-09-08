@@ -16,6 +16,7 @@ export async function GET() {
         company: null,
         users: [],
         manualDays: [],
+        dayOffSwaps: [],
         currentUser,
       });
     const employees = await env.DB.prepare(
@@ -44,6 +45,11 @@ export async function GET() {
     const manualDays = await env.DB.prepare(
       `SELECT id,employee_id AS employeeId,local_date AS localDate,status,note,created_by AS createdBy,updated_at AS updatedAt FROM manual_day_entries ORDER BY local_date DESC`,
     ).all();
+    const dayOffSwaps = await env.DB.prepare(
+      `SELECT s.id,s.employee_id AS employeeId,e.name,s.original_off_date AS originalOffDate,
+      s.replacement_off_date AS replacementOffDate,s.reason,s.created_by AS createdBy,s.created_at AS createdAt
+      FROM day_off_swaps s JOIN employees e ON e.id=s.employee_id ORDER BY s.replacement_off_date DESC`,
+    ).all();
     const users =
       currentUser?.role === "admin"
         ? await env.DB.prepare(
@@ -57,6 +63,7 @@ export async function GET() {
       company,
       users: users.results,
       manualDays: manualDays.results,
+      dayOffSwaps: dayOffSwaps.results,
       currentUser,
     });
   } catch (error) {

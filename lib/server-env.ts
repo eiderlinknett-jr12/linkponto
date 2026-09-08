@@ -58,6 +58,12 @@ CREATE TABLE IF NOT EXISTS punch_edit_audit (
  old_occurred_at TEXT NOT NULL, new_occurred_at TEXT NOT NULL, reason TEXT NOT NULL,
  performed_by TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS day_off_swaps (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL REFERENCES employees(id),
+ original_off_date TEXT NOT NULL, replacement_off_date TEXT NOT NULL, reason TEXT NOT NULL,
+ created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+ UNIQUE(employee_id,original_off_date,replacement_off_date)
+);
 `);
 const employeeColumns = sqlite
   .prepare("PRAGMA table_info(employees)")
