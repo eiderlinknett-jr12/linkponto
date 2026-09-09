@@ -1534,6 +1534,7 @@ function Reports({
             workedMinutes = Math.max(0, Math.round(minutes));
           return {
             key,
+            employeeId: emp.id,
             name: emp.name,
             date,
             marks: list.length
@@ -1582,7 +1583,7 @@ function Reports({
     hm = (n: number) =>
       `${n < 0 ? "-" : ""}${Math.floor(Math.abs(n) / 60)}h ${String(Math.abs(n) % 60).padStart(2, "0")}min`;
   const employeeSummary = selected.map((emp) => {
-    const rows = daily.filter((d) => d.name === emp.name),
+    const rows = daily.filter((d) => d.employeeId === emp.id),
       worked = rows.reduce((s, d) => s + d.minutes, 0),
       expected = rows.reduce((s, d) => s + d.expected, 0),
       balance = worked - expected;
@@ -1741,7 +1742,7 @@ function Reports({
             </p>
           </div>
         </div>
-        <div className="grid gap-3 border-b bg-slate-50 p-5 sm:grid-cols-3">
+        <div className="report-overall grid gap-3 border-b bg-slate-50 p-5 sm:grid-cols-3">
           <ReportTotal label="Horas trabalhadas" value={hm(worked)} />
           <ReportTotal label="Carga prevista" value={hm(expected)} />
           <ReportTotal
@@ -1751,7 +1752,7 @@ function Reports({
           />
         </div>
         {!!daily.length && (
-          <div className="border-b p-5">
+          <div className="report-overall border-b p-5">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-extrabold text-slate-800">
                 Resumo por funcionário
@@ -1804,98 +1805,118 @@ function Reports({
             {daily.length} jornada(s).
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  {[
-                    "Funcionário",
-                    "Data",
-                    "Marcações",
-                    "Situação",
-                    "Trabalhado",
-                    "Previsto",
-                    "Saldo",
-                  ].map((x) => (
-                    <th key={x} className="px-5 py-4">
-                      {x}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {daily.map((d) => (
-                  <tr
-                    key={d.key}
-                    className={
-                      d.status === "Falta" ||
-                      (d.incomplete && d.marks === "Sem registro")
-                        ? "bg-red-50/60"
-                        : d.off
-                          ? "bg-sky-50/50"
-                          : d.status === "Lançamento manual"
-                            ? "bg-emerald-50/40"
-                            : "hover:bg-slate-50/70"
-                    }
-                  >
-                    <td className="px-5 py-4 font-bold">{d.name}</td>
-                    <td className="px-5 py-4">
-                      {d.date.split("-").reverse().join("/")}
-                    </td>
-                    <td className="px-5 py-4 font-mono text-sm">
-                      {d.punchList.length ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {d.punchList.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => setEditingPunch(p)}
-                              title="Clique para corrigir esta marcação"
-                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-bold text-slate-700 shadow-sm transition hover:border-emerald-400 hover:text-emerald-700"
-                            >
-                              {fmtTime(p.occurredAt)}
-                            </button>
+          <div className="space-y-6 p-5 print:p-0">
+            {employeeSummary.map((summary) => {
+              const rows = daily.filter((d) => d.employeeId === summary.id);
+              if (!rows.length) return null;
+              return (
+                <section
+                  key={summary.id}
+                  className="report-employee overflow-hidden rounded-xl border"
+                >
+                  <div className="employee-report-title flex flex-wrap items-center justify-between gap-2 bg-[#0b6b50] px-5 py-3 text-white">
+                    <h3 className="font-extrabold">{summary.name}</h3>
+                    <span className="text-xs font-semibold text-white/80">
+                      Trabalhado {hm(summary.worked)} · Previsto{" "}
+                      {hm(summary.expected)} · Saldo {hm(summary.balance)}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[680px] text-left">
+                      <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                          {[
+                            "Data",
+                            "Marcações",
+                            "Situação",
+                            "Trabalhado",
+                            "Previsto",
+                            "Saldo",
+                          ].map((x) => (
+                            <th key={x} className="px-4 py-3">
+                              {x}
+                            </th>
                           ))}
-                        </div>
-                      ) : (
-                        d.marks
-                      )}
-                      {d.incomplete && (
-                        <span className="ml-2 text-xs font-bold text-amber-600">
-                          Incompleto
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          d.status === "Falta"
-                            ? "bg-red-100 text-red-700"
-                            : d.status === "Atestado"
-                              ? "bg-amber-100 text-amber-700"
-                              : d.status === "Férias"
-                                ? "bg-violet-100 text-violet-700"
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {rows.map((d) => (
+                          <tr
+                            key={d.key}
+                            className={
+                              d.status === "Falta" ||
+                              (d.incomplete && d.marks === "Sem registro")
+                                ? "bg-red-50/60"
                                 : d.off
-                                  ? "bg-sky-100 text-sky-700"
+                                  ? "bg-sky-50/50"
                                   : d.status === "Lançamento manual"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {d.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 font-bold">{hm(d.minutes)}</td>
-                    <td className="px-5 py-4">{hm(d.expected)}</td>
-                    <td
-                      className={`px-5 py-4 font-bold ${d.balance >= 0 ? "text-emerald-700" : "text-red-600"}`}
-                    >
-                      {hm(d.balance)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                                    ? "bg-emerald-50/40"
+                                    : "hover:bg-slate-50/70"
+                            }
+                          >
+                            <td className="px-4 py-3">
+                              {d.date.split("-").reverse().join("/")}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-sm">
+                              {d.punchList.length ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {d.punchList.map((p) => (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => setEditingPunch(p)}
+                                      title="Clique para corrigir esta marcação"
+                                      className="punch-mark rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-bold text-slate-700 shadow-sm transition hover:border-emerald-400 hover:text-emerald-700"
+                                    >
+                                      {fmtTime(p.occurredAt)}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                d.marks
+                              )}
+                              {d.incomplete && (
+                                <span className="ml-2 text-xs font-bold text-amber-600">
+                                  Incompleto
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                                  d.status === "Falta"
+                                    ? "bg-red-100 text-red-700"
+                                    : d.status === "Atestado"
+                                      ? "bg-amber-100 text-amber-700"
+                                      : d.status === "Férias"
+                                        ? "bg-violet-100 text-violet-700"
+                                        : d.off
+                                          ? "bg-sky-100 text-sky-700"
+                                          : d.status === "Lançamento manual"
+                                            ? "bg-emerald-100 text-emerald-700"
+                                            : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {d.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-bold">
+                              {hm(d.minutes)}
+                            </td>
+                            <td className="px-4 py-3">{hm(d.expected)}</td>
+                            <td
+                              className={`px-4 py-3 font-bold ${d.balance >= 0 ? "text-emerald-700" : "text-red-600"}`}
+                            >
+                              {hm(d.balance)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </section>
@@ -2074,6 +2095,73 @@ function UsersAccess({
   );
 }
 
+async function normalizeLogoFile(file: File) {
+  const bitmap = await createImageBitmap(file),
+    source = document.createElement("canvas"),
+    context = source.getContext("2d", { willReadFrequently: true });
+  if (!context) return file;
+  source.width = bitmap.width;
+  source.height = bitmap.height;
+  context.drawImage(bitmap, 0, 0);
+  const pixels = context.getImageData(0, 0, source.width, source.height).data,
+    corner = [pixels[0], pixels[1], pixels[2], pixels[3]],
+    lightCorner =
+      corner[3] < 20 || (corner[0] > 235 && corner[1] > 235 && corner[2] > 235);
+  let left = source.width,
+    top = source.height,
+    right = -1,
+    bottom = -1;
+  for (let y = 0; y < source.height; y++)
+    for (let x = 0; x < source.width; x++) {
+      const i = (y * source.width + x) * 4,
+        visible = pixels[i + 3] > 20,
+        different =
+          Math.abs(pixels[i] - corner[0]) +
+            Math.abs(pixels[i + 1] - corner[1]) +
+            Math.abs(pixels[i + 2] - corner[2]) >
+          45;
+      if (visible && (!lightCorner || different)) {
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        right = Math.max(right, x);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  if (right < left || bottom < top) {
+    left = 0;
+    top = 0;
+    right = source.width - 1;
+    bottom = source.height - 1;
+  }
+  const cropWidth = right - left + 1,
+    cropHeight = bottom - top + 1,
+    output = document.createElement("canvas"),
+    out = output.getContext("2d");
+  if (!out) return file;
+  output.width = 1200;
+  output.height = 420;
+  const scale = Math.min(1080 / cropWidth, 340 / cropHeight),
+    width = cropWidth * scale,
+    height = cropHeight * scale;
+  out.drawImage(
+    source,
+    left,
+    top,
+    cropWidth,
+    cropHeight,
+    (output.width - width) / 2,
+    (output.height - height) / 2,
+    width,
+    height,
+  );
+  const blob = await new Promise<Blob | null>((resolve) =>
+    output.toBlob(resolve, "image/png", 0.95),
+  );
+  return blob
+    ? new File([blob], "logo-diagramada.png", { type: "image/png" })
+    : file;
+}
+
 function SettingsPage({
   company,
   action,
@@ -2099,8 +2187,9 @@ function SettingsPage({
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const f = new FormData();
-    f.append("logo", file);
+    const f = new FormData(),
+      prepared = await normalizeLogoFile(file);
+    f.append("logo", prepared);
     const r = await fetch("/api/logo", { method: "POST", body: f }),
       j = await r.json();
     notify({ type: r.ok ? "ok" : "error", text: r.ok ? j.message : j.error });
@@ -2265,13 +2354,14 @@ function SettingsPage({
       <aside className="h-fit rounded-2xl border bg-white p-6 shadow-sm">
         <h3 className="font-bold">Logo da empresa</h3>
         <p className="mt-1 text-sm text-slate-500">
-          PNG, JPG ou WEBP, até 2 MB.
+          PNG, JPG ou WEBP. O sistema recorta as margens e ajusta
+          automaticamente ao relatório.
         </p>
         <div className="mt-5 grid h-40 place-items-center overflow-hidden rounded-2xl border-2 border-dashed bg-slate-50">
           {company?.logoKey ? (
             <img
               src={`/api/logo?v=${company.updatedAt || ""}`}
-              className="max-h-full max-w-full object-contain p-3"
+              className="h-full w-full object-contain p-3"
               alt="Logo"
             />
           ) : (
