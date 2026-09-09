@@ -1118,38 +1118,30 @@ function ManualEntries({
     [breakStart, setBreakStart] = useState(""),
     [breakEnd, setBreakEnd] = useState(""),
     [exit, setExit] = useState(""),
-    [note, setNote] = useState("");
+    [note, setNote] = useState(""),
+    [mode, setMode] = useState<"add" | "replace">("add"),
+    [marked, setMarked] = useState({
+      entry: false,
+      breakStart: false,
+      breakEnd: false,
+      exit: false,
+    });
   useEffect(() => {
     const id = Number(employeeId),
-      day = manualDays.find((x) => x.employeeId === id && x.localDate === date),
-      marks = punches
-        .filter(
-          (p) =>
-            p.employeeId === id &&
-            p.localDate === date &&
-            p.source === "manual",
-        )
-        .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+      day = manualDays.find((x) => x.employeeId === id && x.localDate === date);
     setStatus(day?.status || "worked");
     setNote(day?.note || "");
-    const times = marks.map((m) =>
-      new Intl.DateTimeFormat("pt-BR", {
-        timeZone: "America/Fortaleza",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date(m.occurredAt)),
-    );
-    setEntry(times[0] || "");
-    if (times.length === 4) {
-      setBreakStart(times[1]);
-      setBreakEnd(times[2]);
-      setExit(times[3]);
-    } else {
-      setBreakStart("");
-      setBreakEnd("");
-      setExit(times[1] || "");
-    }
+    setEntry("");
+    setBreakStart("");
+    setBreakEnd("");
+    setExit("");
+    setMarked({
+      entry: false,
+      breakStart: false,
+      breakEnd: false,
+      exit: false,
+    });
+    setMode("add");
   }, [employeeId, date, manualDays, punches]);
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -1158,6 +1150,11 @@ function ManualEntries({
       employeeId,
       localDate: date,
       status,
+      mode,
+      markEntry: marked.entry,
+      markBreakStart: marked.breakStart,
+      markBreakEnd: marked.breakEnd,
+      markExit: marked.exit,
       entry,
       breakStart,
       breakEnd,
@@ -1174,7 +1171,12 @@ function ManualEntries({
   const existing = manualDays.some(
       (x) => x.employeeId === Number(employeeId) && x.localDate === date,
     ),
-    worked = status === "worked";
+    worked = status === "worked",
+    currentDayPunches = punches
+      .filter(
+        (p) => p.employeeId === Number(employeeId) && p.localDate === date,
+      )
+      .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
       <section className="rounded-2xl border bg-white shadow-sm">
@@ -1226,32 +1228,117 @@ function ManualEntries({
               <option value="vacation">Férias</option>
             </select>
           </label>
+          {currentDayPunches.length > 0 && (
+            <div className="sm:col-span-2 rounded-xl border border-sky-200 bg-sky-50 p-4">
+              <b className="text-sm text-sky-900">
+                Marcações existentes nesse dia
+              </b>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {currentDayPunches.map((p) => (
+                  <span
+                    key={p.id}
+                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-sky-800 shadow-sm"
+                  >
+                    {p.kind}: {fmtTime(p.occurredAt)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {worked && (
             <>
-              <Field
-                label="Entrada *"
-                type="time"
-                value={entry}
-                onChange={(e: any) => setEntry(e.target.value)}
-              />
-              <Field
-                label="Início do intervalo"
-                type="time"
-                value={breakStart}
-                onChange={(e: any) => setBreakStart(e.target.value)}
-              />
-              <Field
-                label="Retorno do intervalo"
-                type="time"
-                value={breakEnd}
-                onChange={(e: any) => setBreakEnd(e.target.value)}
-              />
-              <Field
-                label="Saída *"
-                type="time"
-                value={exit}
-                onChange={(e: any) => setExit(e.target.value)}
-              />
+              <div className="sm:col-span-2 grid gap-3 rounded-2xl border bg-slate-50 p-4 sm:grid-cols-2">
+                <label className="sm:col-span-2 text-sm font-bold">
+                  Como deseja lançar?
+                </label>
+                <label className="flex cursor-pointer gap-3 rounded-xl border bg-white p-3 text-sm">
+                  <input
+                    type="radio"
+                    checked={mode === "add"}
+                    onChange={() => setMode("add")}
+                    className="accent-[#087f5b]"
+                  />
+                  <span>
+                    <b>Adicionar selecionadas</b>
+                    <small className="mt-1 block text-slate-500">
+                      Preserva as marcações já existentes.
+                    </small>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer gap-3 rounded-xl border bg-white p-3 text-sm">
+                  <input
+                    type="radio"
+                    checked={mode === "replace"}
+                    onChange={() => setMode("replace")}
+                    className="accent-[#087f5b]"
+                  />
+                  <span>
+                    <b>Substituir o dia</b>
+                    <small className="mt-1 block text-slate-500">
+                      Apaga as marcações do dia e grava as selecionadas.
+                    </small>
+                  </span>
+                </label>
+              </div>
+              <div className="sm:col-span-2 flex items-center justify-between">
+                <b className="text-sm">Selecione o que será lançado</b>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMarked({
+                      entry: true,
+                      breakStart: true,
+                      breakEnd: true,
+                      exit: true,
+                    })
+                  }
+                  className="text-sm font-bold text-[#087f5b]"
+                >
+                  Selecionar todos
+                </button>
+              </div>
+              {[
+                ["entry", "Entrada", entry, setEntry],
+                [
+                  "breakStart",
+                  "Início do intervalo",
+                  breakStart,
+                  setBreakStart,
+                ],
+                ["breakEnd", "Retorno do intervalo", breakEnd, setBreakEnd],
+                ["exit", "Saída", exit, setExit],
+              ].map(([key, label, value, setter]) => (
+                <label
+                  key={String(key)}
+                  className={`rounded-xl border p-3 text-sm font-bold ${marked[key as keyof typeof marked] ? "border-emerald-400 bg-emerald-50" : "bg-white"}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={marked[key as keyof typeof marked]}
+                      onChange={(e) =>
+                        setMarked((current) => ({
+                          ...current,
+                          [String(key)]: e.target.checked,
+                        }))
+                      }
+                      className="size-4 accent-[#087f5b]"
+                    />
+                    {String(label)}
+                  </span>
+                  <input
+                    type="time"
+                    value={String(value)}
+                    disabled={!marked[key as keyof typeof marked]}
+                    onChange={(e) =>
+                      (setter as React.Dispatch<React.SetStateAction<string>>)(
+                        e.target.value,
+                      )
+                    }
+                    className="mt-2 h-11 w-full rounded-lg border bg-white px-3 disabled:opacity-40"
+                  />
+                </label>
+              ))}
             </>
           )}
           <label className="sm:col-span-2 text-sm font-bold">

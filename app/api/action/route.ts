@@ -210,20 +210,39 @@ export async function POST(request: Request) {
           { error: "Preencha funcionário, data e situação." },
           { status: 400 },
         );
-      if (status === "worked" && (!body.entry || !body.exit))
+      const mode = body.mode === "replace" ? "replace" : "add",
+        selectedMarks = [
+          {
+            field: "entry",
+            selected: Boolean(body.markEntry),
+            kind: "Entrada",
+          },
+          {
+            field: "breakStart",
+            selected: Boolean(body.markBreakStart),
+            kind: "Início do intervalo",
+          },
+          {
+            field: "breakEnd",
+            selected: Boolean(body.markBreakEnd),
+            kind: "Retorno do intervalo",
+          },
+          { field: "exit", selected: Boolean(body.markExit), kind: "Saída" },
+        ].filter((mark) => mark.selected);
+      if (status === "worked" && !selectedMarks.length)
         return Response.json(
-          { error: "Informe pelo menos a entrada e a saída." },
+          { error: "Selecione pelo menos uma marcação para lançar." },
           { status: 400 },
         );
       if (
         status === "worked" &&
-        Boolean(body.breakStart) !== Boolean(body.breakEnd)
+        selectedMarks.some(
+          (mark) =>
+            !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body[mark.field] || "")),
+        )
       )
         return Response.json(
-          {
-            error:
-              "Preencha os dois horários do intervalo ou deixe ambos vazios.",
-          },
+          { error: "Informe o horário de todas as marcações selecionadas." },
           { status: 400 },
         );
       const current = await getSessionUser(),
@@ -233,18 +252,24 @@ export async function POST(request: Request) {
       )
         .bind(date, date, employeeId)
         .run();
-      await env.DB.prepare(
-        "DELETE FROM punches WHERE employee_id=? AND local_date=? AND source='manual'",
-      )
-        .bind(employeeId, date)
-        .run();
       if (status === "worked") {
-        const marks = [
-          { kind: "Entrada", time: body.entry },
-          { kind: "Início do intervalo", time: body.breakStart },
-          { kind: "Retorno do intervalo", time: body.breakEnd },
-          { kind: "Saída", time: body.exit },
-        ].filter((x) => x.time);
+        if (mode === "replace")
+          await env.DB.prepare(
+            "DELETE FROM punches WHERE employee_id=? AND local_date=?",
+          )
+            .bind(employeeId, date)
+            .run();
+        else
+          for (const mark of selectedMarks)
+            await env.DB.prepare(
+              "DELETE FROM punches WHERE employee_id=? AND local_date=? AND source='manual' AND kind=?",
+            )
+              .bind(employeeId, date, mark.kind)
+              .run();
+        const marks = selectedMarks.map((mark) => ({
+          kind: mark.kind,
+          time: body[mark.field],
+        }));
         for (const mark of marks) {
           const occurredAt = new Date(
             `${date}T${mark.time}:00-03:00`,
@@ -263,7 +288,12 @@ export async function POST(request: Request) {
             )
             .run();
         }
-      }
+      } else
+        await env.DB.prepare(
+          "DELETE FROM punches WHERE employee_id=? AND local_date=? AND source='manual'",
+        )
+          .bind(employeeId, date)
+          .run();
       await env.DB.prepare(
         `INSERT INTO manual_day_entries (employee_id,local_date,status,note,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(employee_id,local_date) DO UPDATE SET status=excluded.status,note=excluded.note,created_by=excluded.created_by,updated_at=excluded.updated_at`,
       )
@@ -286,6 +316,8 @@ export async function POST(request: Request) {
           "save",
           JSON.stringify({
             status,
+            mode,
+            selectedMarks: selectedMarks.map((mark) => mark.kind),
             note,
             entry: body.entry || null,
             breakStart: body.breakStart || null,
