@@ -95,6 +95,42 @@ function nationalHoliday(date: string) {
   ].includes(date.slice(5));
 }
 
+function punchScheduleForDate(scheduleJson: string | null, date: string) {
+  try {
+    if (!scheduleJson) return { off: false, hasBreak: true };
+    const schedule = JSON.parse(scheduleJson),
+      parsedDate = new Date(`${date}T12:00:00`),
+      day = parsedDate.getDay(),
+      sundayChoice = String(schedule.monthlySundayOff || "none"),
+      week = Math.ceil(parsedDate.getDate() / 7),
+      lastSunday =
+        new Date(
+          parsedDate.getFullYear(),
+          parsedDate.getMonth() + 1,
+          0,
+        ).getDate() -
+          parsedDate.getDate() <
+        7;
+    if (
+      day === 0 &&
+      (sundayChoice === String(week) || (sundayChoice === "last" && lastSunday))
+    )
+      return { off: true, hasBreak: false };
+    const selected =
+      nationalHoliday(date) && schedule.holiday?.enabled
+        ? schedule.holiday
+        : schedule.days?.[day];
+    if (!selected?.enabled) return { off: true, hasBreak: false };
+    return {
+      off: false,
+      hasBreak:
+        selected.hasBreak ?? Boolean(selected.breakStart && selected.breakEnd),
+    };
+  } catch {
+    return { off: false, hasBreak: true };
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, any>;
@@ -513,27 +549,48 @@ export async function POST(request: Request) {
         }
       }
       const day = localDate();
+      const swap = await env.DB.prepare(
+        `SELECT original_off_date AS originalOffDate,replacement_off_date AS replacementOffDate
+         FROM day_off_swaps
+         WHERE employee_id=? AND (original_off_date=? OR replacement_off_date=?)
+         ORDER BY id DESC LIMIT 1`,
+      )
+        .bind(employee.id, day, day)
+        .first<{
+          originalOffDate: string;
+          replacementOffDate: string;
+        }>();
+      if (swap?.replacementOffDate === day)
+        return Response.json(
+          {
+            error:
+              "Hoje é a folga transferida deste funcionário. Não há marcações previstas.",
+          },
+          { status: 400 },
+        );
       const count = await env.DB.prepare(
         "SELECT COUNT(*) AS n FROM punches WHERE employee_id=? AND local_date=?",
       )
         .bind(employee.id, day)
         .first<{ n: number }>();
-      let hasBreak = true;
-      try {
-        if (employee.scheduleJson) {
-          const schedule = JSON.parse(employee.scheduleJson),
-            today =
-              nationalHoliday(day) && schedule.holiday?.enabled
-                ? schedule.holiday
-                : schedule.days?.[new Date(`${day}T12:00:00`).getDay()];
-          hasBreak =
-            today?.hasBreak ?? Boolean(today?.breakStart && today?.breakEnd);
-        }
-      } catch {}
+      const effectiveScheduleDate =
+          swap?.originalOffDate === day ? swap.replacementOffDate : day,
+        { hasBreak } = punchScheduleForDate(
+          employee.scheduleJson,
+          effectiveScheduleDate,
+        );
       const kinds = hasBreak
         ? ["Entrada", "Início do intervalo", "Retorno do intervalo", "Saída"]
         : ["Entrada", "Saída"];
-      const kind = kinds[(count?.n ?? 0) % 4];
+      if ((count?.n ?? 0) >= kinds.length)
+        return Response.json(
+          {
+            error:
+              "Todas as marcações previstas para hoje já foram registradas.",
+          },
+          { status: 400 },
+        );
+      const kind = kinds[(count?.n ?? 0) % kinds.length];
       await env.DB.prepare(
         "INSERT INTO punches (employee_id,kind,occurred_at,local_date,source,latitude,longitude,device,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
       )

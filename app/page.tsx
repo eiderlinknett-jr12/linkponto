@@ -1611,14 +1611,21 @@ function Reports({
             manualOff = Boolean(
               manual && ["off", "medical", "vacation"].includes(manual.status),
             ),
+            transferredSchedule = swapOriginal
+              ? scheduleInfo(emp, swapOriginal.replacementOffDate)
+              : null,
             finalExpected = manualOff
               ? 0
               : swapReplacement
                 ? 0
                 : swapOriginal
-                  ? scheduleInfo(emp, swapOriginal.replacementOffDate).expected
+                  ? transferredSchedule!.expected
                   : info.expected,
-            workedMinutes = Math.max(0, Math.round(minutes));
+            workedMinutes = Math.max(0, Math.round(minutes)),
+            effectiveOff =
+              manualOff ||
+              Boolean(swapReplacement) ||
+              (info.off && !swapOriginal);
           return {
             key,
             employeeId: emp.id,
@@ -1630,15 +1637,17 @@ function Reports({
                 ? "FALTA"
                 : manualOff
                   ? manualLabels[manual!.status].toUpperCase()
-                  : info.off && !swapOriginal
-                    ? "FOLGA"
-                    : "Sem registro",
+                  : swapReplacement
+                    ? "FOLGA TRANSFERIDA"
+                    : info.off && !swapOriginal
+                      ? "FOLGA"
+                      : "Sem registro",
             minutes: workedMinutes,
             expected: finalExpected,
             balance: workedMinutes - finalExpected,
             incomplete:
               !manual &&
-              !info.off &&
+              !effectiveOff &&
               (list.length === 0 || list.length % 2 !== 0),
             status: manual
               ? manualLabels[manual.status]
@@ -1647,10 +1656,7 @@ function Reports({
                 : swapOriginal
                   ? "Trabalho por troca de folga"
                   : info.label,
-            off:
-              manualOff ||
-              Boolean(swapReplacement) ||
-              (info.off && !swapOriginal),
+            off: effectiveOff,
             punchList: list,
           };
         }),
