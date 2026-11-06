@@ -1,0 +1,46 @@
+services:
+  linkponto-control:
+    build: .
+    image: linkponto:latest
+    container_name: linkponto-control
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_ROLE: control
+      DATA_DIR: /app/admin-data
+      CONTROL_DATA_DIR: /app/control-data
+      ADMIN_PASSWORD: ${CONTROL_ADMIN_PASSWORD:?Defina CONTROL_ADMIN_PASSWORD}
+      AUTH_SECRET: ${CONTROL_AUTH_SECRET:?Defina CONTROL_AUTH_SECRET}
+      TENANT_BASE_DOMAIN: ${TENANT_BASE_DOMAIN:-linkponto.linknett.com.br}
+    volumes:
+      - linkponto_control_admin:/app/admin-data
+      - linkponto_control_data:/app/control-data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.linkponto-control.entrypoints=websecure"
+      - "traefik.http.routers.linkponto-control.rule=Host(`${CONTROL_DOMAIN:-painel.linkponto.linknett.com.br}`)"
+      - "traefik.http.routers.linkponto-control.tls=true"
+      - "traefik.http.routers.linkponto-control.tls.certresolver=letsencrypt"
+      - "traefik.http.services.linkponto-control.loadbalancer.server.port=3000"
+
+  linkponto-provisioner:
+    image: linkponto:latest
+    container_name: linkponto-provisioner
+    restart: unless-stopped
+    command: ["node", "scripts/provisioner.mjs"]
+    user: root
+    environment:
+      CONTROL_DATA_DIR: /app/control-data
+      LINKPONTO_TENANT_IMAGE: linkponto:latest
+      TENANT_AUTH_SECRET: ${TENANT_AUTH_SECRET:?Defina TENANT_AUTH_SECRET}
+    volumes:
+      - linkponto_control_data:/app/control-data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - linkponto-control
+
+volumes:
+  linkponto_control_admin:
+    name: linkponto_control_admin
+  linkponto_control_data:
+    name: linkponto_control_data

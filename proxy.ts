@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 
 export function proxy(request: NextRequest) {
   const path=request.nextUrl.pathname;
+  if(process.env.TENANT_STATUS==="suspended"&&!path.startsWith("/suspenso")&&!path.startsWith("/_next")&&path!=="/favicon.svg")return NextResponse.redirect(new URL("/suspenso",request.url));
+  if(process.env.APP_ROLE==="control"&&path==="/")return NextResponse.redirect(new URL("/saas",request.url));
   if(path.startsWith("/login")||path.startsWith("/ponto")||path.startsWith("/api/auth")||path.startsWith("/_next")||path==="/favicon.svg")return NextResponse.next();
   if(path.startsWith("/api/"))return NextResponse.next();
   const token=request.cookies.get("linkponto_session")?.value;

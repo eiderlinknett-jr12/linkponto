@@ -26,14 +26,17 @@ else
   git clone --branch main "$REPOSITORY" "$APP_DIR"
 fi
 
+INITIAL_LOGIN=""
 if [ ! -f "$APP_DIR/.env" ]; then
   AUTH_SECRET="$(openssl rand -hex 32)"
+  GENERATED_ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -hex 12)}"
   cat > "$APP_DIR/.env" <<EOF
 ADMIN_USER=admin
-ADMIN_PASSWORD=admin@123
+ADMIN_PASSWORD=$GENERATED_ADMIN_PASSWORD
 AUTH_SECRET=$AUTH_SECRET
 EOF
   chmod 600 "$APP_DIR/.env"
+  INITIAL_LOGIN="Login inicial: admin / $GENERATED_ADMIN_PASSWORD"
 fi
 
 cd "$APP_DIR"
@@ -43,5 +46,5 @@ echo
 echo "LINKPONTO_INSTALADO"
 echo "Painel: https://$DOMAIN"
 echo "Ponto:  https://$DOMAIN/ponto"
-echo "Login inicial: admin / admin@123"
+if [ -n "$INITIAL_LOGIN" ]; then echo "$INITIAL_LOGIN"; fi
 echo "Container: $(docker inspect -f '{{.State.Status}}' linkponto 2>/dev/null || echo indisponivel)"
