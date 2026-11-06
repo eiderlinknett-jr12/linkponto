@@ -17,7 +17,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/scripts ./scripts
-RUN mkdir -p /app/data && chown -R node:node /app
+RUN mkdir -p /app/data /app/admin-data /app/control-data && chown -R node:node /app
 USER node
 EXPOSE 3000
 CMD ["npm", "start"]
