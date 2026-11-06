@@ -9,6 +9,12 @@ const image = process.env.LINKPONTO_TENANT_IMAGE || "linkponto:latest";
 const authSecret = process.env.TENANT_AUTH_SECRET;
 if (!authSecret) throw new Error("TENANT_AUTH_SECRET é obrigatório.");
 
+function schemaReady() {
+  return Boolean(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tenants'").get(),
+  );
+}
+
 function docker(method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const payload = body ? Buffer.from(JSON.stringify(body)) : undefined;
@@ -61,6 +67,7 @@ async function processJob(job) {
 }
 
 async function tick() {
+  if (!schemaReady()) return;
   const job = db.prepare("SELECT * FROM provision_jobs WHERE status='queued' ORDER BY id LIMIT 1").get();
   if (!job) return;
   const now = new Date().toISOString();
@@ -70,6 +77,7 @@ async function tick() {
 }
 
 function enqueueExpiredTenants() {
+  if (!schemaReady()) return;
   const today = new Date().toISOString().slice(0, 10);
   const expired = db.prepare(`
     SELECT t.id FROM tenants t
