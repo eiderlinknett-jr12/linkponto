@@ -18,6 +18,11 @@ export default function SaasClient() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   async function send(payload: Record<string, unknown>) {
     setMessage("Processando...");
     const response = await fetch("/api/saas", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
@@ -47,7 +52,10 @@ export default function SaasClient() {
       <div className="mx-auto max-w-7xl space-y-8">
         <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div><p className="text-emerald-400 font-semibold">LinkNett</p><h1 className="text-3xl font-bold">Painel SaaS LinkPonto</h1><p className="text-slate-400">Clientes, planos, pagamentos e ambientes isolados.</p></div>
-          <div className="grid grid-cols-3 gap-3 text-center"><Kpi label="Clientes" value={data.tenants.length}/><Kpi label="Ativos" value={data.tenants.filter(t=>t.status==="active").length}/><Kpi label="Planos" value={data.plans.length}/></div>
+          <div className="flex flex-col gap-3">
+            <button type="button" onClick={logout} className="self-end rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 hover:border-red-400 hover:bg-red-500/10 hover:text-red-300">Sair</button>
+            <div className="grid grid-cols-3 gap-3 text-center"><Kpi label="Clientes" value={data.tenants.length}/><Kpi label="Ativos" value={data.tenants.filter(t=>t.status==="active").length}/><Kpi label="Planos" value={data.plans.length}/></div>
+          </div>
         </header>
         {message && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm break-all">{message}</div>}
         <section className="grid gap-6 lg:grid-cols-2">
